@@ -1,0 +1,11 @@
+numpy
+pandas
+fastapi
+uvicorn
+supabase
+pydantic
+google-genai
+scikit-learn
+python-dotenv
+python-multipart
+pydantic-settings
