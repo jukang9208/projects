@@ -1,0 +1,13 @@
+numpy
+pandas
+fastapi
+uvicorn
+supabase
+sqlalchemy
+google-genai
+scikit-learn
+python-dotenv
+psycopg2-binary
+pydantic-settings
+pymupdf
+pillow
