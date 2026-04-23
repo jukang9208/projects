@@ -9,7 +9,7 @@ from services.db_service import (
     get_district_stats,
     get_all_cluster_data,
     get_district_cluster,
-    seararch_rag_documents,
+    search_rag_documents,
 )
 from services.answer_handlers.llm_client import call_llm, clean_rag
 
@@ -74,7 +74,7 @@ def answer_cluster(parsed: dict) -> dict[str, Any]:
     cluster_summary_data = cluster_data.get("cluster_summary") or {}
     label = get_cluster_label_from_profile(cluster_summary_data, cid)
 
-    docs = seararch_rag_documents(
+    docs = search_rag_documents(
         f"{district} Cluster {label} {cid} 특징 에너지 소비 해석",
         match_count=3,
     )
@@ -131,7 +131,7 @@ def answwer_general_cluster_question(parsed: dict, target_cid: int) -> dict[str,
 
     label = get_cluster_label_from_profile(cluster_summary, target_cid)
 
-    docs = seararch_rag_documents(
+    docs = search_rag_documents(
         f"Cluster {label} {target_cid} 특징 해석 정책 시사점",
         match_count=3,
     )

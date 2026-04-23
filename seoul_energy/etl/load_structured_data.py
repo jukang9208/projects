@@ -181,42 +181,44 @@ def process_electricity_data(data_dir: Path) -> pd.DataFrame:
 
     ele_data = ele_data[~ele_data["district"].isin(["소계", "합계", "자치구별(2)", "nan"])].copy()
 
+    # 컬럼 구조: 합계/가정용/공공용/서비스업소계/서비스업전철/서비스업수도/서비스업사업자용/서비스업순수서비스/산업용소계/...
+    # pandas 자동 헤더: 2019=합계, 2019.1=가정용, 2019.2=공공용, 2019.3=서비스업소계
     year_col_map = {
         2019: {
             "home_usage": "2019.1",
             "public_usage": "2019.2",
             "service_usage": "2019.3",
-            "industry_usage": "2019.7",
+            "industry_usage": "2019.8",
         },
         2020: {
             "home_usage": "2020.1",
             "public_usage": "2020.2",
             "service_usage": "2020.3",
-            "industry_usage": "2020.7",
+            "industry_usage": "2020.8",
         },
         2021: {
             "home_usage": "2021.1",
             "public_usage": "2021.2",
             "service_usage": "2021.3",
-            "industry_usage": "2021.7",
+            "industry_usage": "2021.8",
         },
         2022: {
             "home_usage": "2022.1",
             "public_usage": "2022.2",
             "service_usage": "2022.3",
-            "industry_usage": "2022.7",
+            "industry_usage": "2022.8",
         },
         2023: {
             "home_usage": "2023.1",
             "public_usage": "2023.2",
             "service_usage": "2023.3",
-            "industry_usage": "2023.7",
+            "industry_usage": "2023.8",
         },
         2024: {
             "home_usage": "2024.1",
             "public_usage": "2024.2",
             "service_usage": "2024.3",
-            "industry_usage": "2024.7",
+            "industry_usage": "2024.8",
         },
     }
 

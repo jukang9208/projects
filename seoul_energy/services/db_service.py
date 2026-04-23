@@ -94,35 +94,41 @@ def get_all_cluster_data(k: int = 6) -> dict:
     finally:
         db.close()
 
-def seararch_rag_documents(query: str, match_count: int = 5) -> list[dict]:
+def search_rag_documents(
+    query: str,
+    match_count: int = 5,
+    match_threshold: float = 0.70,
+) -> list[dict]:
     try:
         nomalized_query = (query or "").strip()
         if not nomalized_query:
             return []
-        
+
+        from google.genai import types as genai_types
         embedding_responce = genai_client.models.embed_content(
             model=EMBEDDING_MODEL,
-            contents = nomalized_query,
-            config={
-                "task_type": "retrieval_query",
-                "output_dimensionality" : 768,
-            },
+            contents=nomalized_query,
+            config=genai_types.EmbedContentConfig(
+                task_type="retrieval_query",
+                output_dimensionality=768,
+            ),
         )
 
         if not embedding_responce or not embedding_responce.embeddings:
-            return[]
-        
+            return []
+
         query_embedding = embedding_responce.embeddings[0].values
         rpc_params = {
-            "query_embedding" : query_embedding,
-            "match_count" : match_count,
-            "filter_cluster_id" : None,
+            "query_embedding"  : query_embedding,
+            "match_count"      : match_count,
+            "filter_cluster_id": None,
+            "match_threshold"  : match_threshold,
         }
         print(f"[DEBUG] RAG Query: {nomalized_query}")
 
         response = supabase.rpc("match_energy_documents", rpc_params).execute()
         raw_data = response.data or []
-        print(f"[DEBUG] RPC Returned Row Count : {len(raw_data)}")
+        print(f"[DEBUG] RPC Returned Row Count : {len(raw_data)} (threshold={match_threshold})")
 
         cleaned_results = []
         for row in raw_data:

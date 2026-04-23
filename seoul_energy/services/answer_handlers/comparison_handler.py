@@ -1,7 +1,7 @@
 from typing import Any
 from sqlalchemy import text
 from db.database import SessionLocal
-from services.db_service import seararch_rag_documents
+from services.db_service import search_rag_documents
 from services.answer_utils import format_number
 from services.answer_handlers.llm_client import call_llm, filter_rag
 
@@ -116,7 +116,7 @@ def answer_comparison(parsed: dict) -> dict[str, Any]:
 
     db_fact = _build_db_fact(d1_name, d2_name, r1, r2, year)
 
-    docs = seararch_rag_documents(
+    docs = search_rag_documents(
         f"{d1_name} {d2_name} 에너지 소비 구조 비교 군집 특성",
         match_count=3,
     )

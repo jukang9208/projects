@@ -2,45 +2,41 @@ import numpy as np
 
 
 def get_cluster_label_from_profile(cluster_summary: dict, cluster_id: int) -> str:
+    """
+    K=9 기준 군집 레이블 결정.
+    우선순위: 산업용 비율 → 가정용 비율 → 공공용 비율 → 서비스업 규모·인구
+    """
+    home     = float(cluster_summary.get("home_ratio_avg")     or 0)
+    service  = float(cluster_summary.get("service_ratio_avg")  or 0)
+    industry = float(cluster_summary.get("industry_ratio_avg") or 0)
+    public   = float(cluster_summary.get("public_ratio_avg")   or 0)
+    pop      = float(cluster_summary.get("population_avg")     or 0)
 
-    home = float(cluster_summary.get("home_ratio_avg") or 0)
-    service = float(cluster_summary.get("service_ratio_avg") or 0)
-    industry= float(cluster_summary.get("industry_ratio_avg") or 0)
-    public = float(cluster_summary.get("public_ratio_avg") or 0)
-    pop = float(cluster_summary.get("population_avg") or 0)
+    # 1. 산업용 비율 기준 (서울에서 10%+는 명확한 산업지구)
+    if industry >= 0.10:
+        return "산업·서비스 혼재형"
+    if industry >= 0.07 and service >= 0.50:
+        return "서비스·산업 복합형"
 
-    dominant = max(
-        ("가정용", home),
-        ("서비스업", service),
-        ("산업용", industry),
-        ("공공용", public),
-        key=lambda x: x[1],
-    )[0]
+    # 2. 가정용 비율 기준
+    if home >= 0.40 and public >= 0.10:
+        return "주거·공공 복합형"
+    if home >= 0.38:
+        return "주거 밀집형"
+    if home >= 0.33 and pop >= 500_000:
+        return "광역 주거·서비스형"
 
-    if dominant == "가정용":
-        if home >= 0.35:
-            return "주거 밀집 지역"
-        elif public >= 0.10:
-            return "주거·공공 혼재 지역"
-        else:
-            return "전통 주거 중심 지역"
+    # 3. 공공용 비율 기준
+    if public >= 0.17 and service >= 0.45:
+        return "공공·서비스 혼재형"
 
-    if dominant == "서비스업":
-        if service >= 0.40:
-            return "광역 상업 거점 지역"
-        elif industry >= 0.25:
-            return "서비스·산업 복합 지역"
-        else:
-            return "상업 중심 지역"
-
-    if dominant == "산업용":
-        if industry >= 0.35:
-            return "산업·제조 특화 지역"
-        else:
-            return "도심 산업·상업 혼합 지역"
-
-    if dominant == "공공용":
-        return "공공·행정 기능 중심 지역"
+    # 4. 서비스업 비율 기준 (도심 → 광역 → 중규모)
+    if service >= 0.70 and home < 0.15:
+        return "도심 상업 거점형"
+    if service >= 0.65 and pop >= 400_000:
+        return "광역 서비스 중심형"
+    if service >= 0.55:
+        return "서비스 중심형"
 
     return f"군집 {cluster_id}"
 

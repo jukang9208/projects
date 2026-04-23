@@ -1,5 +1,5 @@
 from typing import Any
-from services.db_service import seararch_rag_documents, get_district_trind
+from services.db_service import search_rag_documents, get_district_trind
 from services.answer_utils import (
     build_kpi,
     format_ratio,
@@ -106,7 +106,7 @@ def answer_trend(parsed: dict) -> dict[str, Any]:
 
     db_fact = _build_db_fact(district, metric, label, unit, trend_list)
 
-    docs = seararch_rag_documents(
+    docs = search_rag_documents(
         f"{district} {label} 변화 추세 에너지 소비 특성",
         match_count=5,
     )

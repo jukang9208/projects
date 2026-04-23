@@ -1,7 +1,7 @@
 from typing import Any
 from sqlalchemy import text
 from db.database import SessionLocal
-from services.db_service import seararch_rag_documents
+from services.db_service import search_rag_documents
 from services.answer_utils import format_number, build_kpi
 from services.answer_handlers.llm_client import call_llm, clean_rag
 
@@ -76,7 +76,7 @@ def answer_seoul_summary(parsed: dict) -> dict[str, Any]:
         f"(자치구별 평균 {format_number(population / district_count, '명')})."
     )
 
-    docs     = seararch_rag_documents("서울시 에너지 소비 현황 군집 특성 추세", match_count=5)
+    docs     = search_rag_documents("서울시 에너지 소비 현황 군집 특성 추세", match_count=5)
     rag_text = clean_rag(docs, max_lines=100) or "(RAG 문서 없음 — DB 수치 기반으로만 요약)"
 
     prompt  = _SUMMARY_PROMPT.format(db_fact=db_fact, rag_text=rag_text)

@@ -54,6 +54,9 @@ def _prepare_analysis_frames(db):
     if raw_df.empty:
         return None, None, None, None
 
+    # K-means 레이블 재현성: Supabase 반환 순서와 무관하게 고정
+    raw_df = raw_df.sort_values(["year", "district"]).reset_index(drop=True)
+
     meta_df = raw_df[["year", "district"]].copy()
     feature_df = select_feature_columns(raw_df)
     feature_df = clean_dataframe(feature_df)
@@ -171,7 +174,7 @@ def get_correlation_matrix(db):
     return result
 
 # 엘보우 계산 
-def get_elbow_data(db, k_range=(2, 8)):
+def get_elbow_data(db, k_range=(2, 10)):
     start_k, end_k = _validate_k_range(k_range)
     cache_key = _make_cache_key("all_years", start_k=start_k, end_k=end_k)
 
@@ -212,7 +215,7 @@ def get_elbow_data(db, k_range=(2, 8)):
     return result
 
 # 실루엣계수
-def get_silhouette_scores(db, k_range=(2, 8)):
+def get_silhouette_scores(db, k_range=(2, 10)):
     start_k, end_k = _validate_k_range(k_range)
     cache_key = _make_cache_key("all_years", start_k=start_k, end_k=end_k)
 

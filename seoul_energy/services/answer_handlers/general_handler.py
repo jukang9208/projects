@@ -1,6 +1,6 @@
 from typing import Any
 from services.answer_utils import to_python_type
-from services.db_service import seararch_rag_documents
+from services.db_service import search_rag_documents
 from services.answer_handlers.llm_client import call_llm, clean_rag
 
 _GENERAL_PROMPT = """당신은 서울시 에너지 데이터 분석 전문가입니다.
@@ -19,7 +19,7 @@ _GENERAL_PROMPT = """당신은 서울시 에너지 데이터 분석 전문가입
 """
 
 def answer_general(question: str) -> dict[str, Any]:
-    docs = to_python_type(seararch_rag_documents(question, match_count=5))
+    docs = to_python_type(search_rag_documents(question, match_count=5))
     rag_text = clean_rag(docs)
 
     if not rag_text:
