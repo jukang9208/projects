@@ -1,7 +1,7 @@
 import sys
 import torch
 from fastapi import FastAPI
-from app import classify, rag
+from app import classify, rag, analyze
 from core.config import APP_TITLE, APP_VERSION
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -27,6 +27,7 @@ app.add_middleware(
 
 app.include_router(classify.router)
 app.include_router(rag.router)
+app.include_router(analyze.router)
 
 @app.get("/")
 async def root():

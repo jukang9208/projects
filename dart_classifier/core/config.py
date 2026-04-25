@@ -15,8 +15,9 @@ APP_VERSION = "0.1.0"
 LABEL_NAMES = ["감사보고서", "사업보고서", "유상증자"]
 
 SUPABASE_URL: str = os.environ["SUPABASE_URL"]
-SUPABASE_KEY: str = os.environ["SUPABASE_KEY"]   
+SUPABASE_KEY: str = os.environ["SUPABASE_KEY"]
 
 GEMINI_API_KEY: str = os.environ["GEMINI_API_KEY"]
+DART_API_KEY:   str = os.environ["DART_API_KEY"]
 GEMINI_EMBEDDING_MODEL: str = "models/gemini-embedding-001"
 EMBEDDING_DIM: int = 768

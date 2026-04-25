@@ -58,3 +58,37 @@ class SearchResult(BaseModel):
 class SearchResponse(BaseModel):
     results: list[SearchResult]
     count: int
+
+
+# ── Analyze (분류 + 재무) ─────────────────────────────────
+class AnalyzeRequest(BaseModel):
+    text:      str = Field(..., min_length=10, description="공시 본문 텍스트")
+    corp_name: str = Field(..., min_length=1,  description="기업명")
+    year:      int = Field(..., ge=2015, le=2030, description="사업연도")
+
+
+class FinancialData(BaseModel):
+    corp_name:         str
+    stock_code:        str | None  = Field(None, description="종목코드")
+    year:              int
+    # 재무제표
+    revenue:           int | None  = Field(None, description="매출액 (원)")
+    operating_profit:  int | None  = Field(None, description="영업이익 (원)")
+    net_income:        int | None  = Field(None, description="당기순이익 (원)")
+    total_assets:      int | None  = Field(None, description="자산총계 (원)")
+    total_liabilities: int | None  = Field(None, description="부채총계 (원)")
+    total_equity:      int | None  = Field(None, description="자본총계 (원)")
+    debt_ratio:        float | None = Field(None, description="부채비율 (%)")
+    # 주가
+    close:             int | None  = Field(None, description="최신 종가 (원)")
+    market_cap:        int | None  = Field(None, description="시가총액 (원)")
+    high_52w:          int | None  = Field(None, description="52주 최고가 (원)")
+    low_52w:           int | None  = Field(None, description="52주 최저가 (원)")
+    listed:            bool        = Field(False, description="상장 여부")
+    source:            str         = Field(..., description="cache | dart_api")
+
+
+class AnalyzeResponse(BaseModel):
+    classify:  ClassifyResult
+    financial: FinancialData
+    insight:   str = Field(..., description="분류 + 재무 기반 종합 인사이트")
