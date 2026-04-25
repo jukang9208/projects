@@ -4,3 +4,4 @@
 *.pdf
 .vscode/
 .idea/
+dart_classifier/models/

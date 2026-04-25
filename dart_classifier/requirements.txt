@@ -1,0 +1,9 @@
+fastapi
+uvicorn[standard]
+transformers==5.1.0
+safetensors
+accelerate
+pydantic
+supabase
+google-genai
+python-dotenv
