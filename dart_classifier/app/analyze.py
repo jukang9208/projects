@@ -1,13 +1,11 @@
 from fastapi import APIRouter, HTTPException
-from schemas.classify import AnalyzeRequest, AnalyzeResponse, ClassifyResult, FinancialData
-from services.classifier import classify_text
 from services.financial import get_financial
+from services.classifier import classify_text
+from schemas.classify import AnalyzeRequest, AnalyzeResponse, ClassifyResult, FinancialData
 
 router = APIRouter(prefix="/analyze", tags=["분석"])
 
-
 def build_insight(label: str, score: float, f: FinancialData) -> str:
-    """분류 결과 + 재무 데이터 기반 인사이트 생성"""
 
     def fmt(v: int | None) -> str:
         if v is None:
@@ -56,13 +54,13 @@ def build_insight(label: str, score: float, f: FinancialData) -> str:
 async def analyze(req: AnalyzeRequest):
     """공시 본문 분류 + 기업 재무 데이터 통합 분석"""
     try:
-        # 1. 공시 분류
+        # 공시 분류
         cls = classify_text(req.text[:512])
 
-        # 2. 재무 데이터 조회 (on-demand)
+        # 재무 데이터 조회 (on-demand)
         fin_raw = get_financial(req.corp_name, req.year)
 
-        # 3. 응답 구성
+        # 응답 구성
         classify_result = ClassifyResult(label=cls["label"], score=cls["score"])
         financial = FinancialData(**fin_raw)
         insight   = build_insight(cls["label"], cls["score"], financial)

@@ -92,3 +92,22 @@ class AnalyzeResponse(BaseModel):
     classify:  ClassifyResult
     financial: FinancialData
     insight:   str = Field(..., description="분류 + 재무 기반 종합 인사이트")
+
+
+# ── Disclosures (공시 자동 조회) v2.5 ─────────────────────
+class DisclosureItem(BaseModel):
+    rcept_no:  str             = Field(..., description="접수번호")
+    rept_nm:   str             = Field(..., description="보고서명")
+    rcept_dt:  str             = Field(..., description="접수일자 (YYYYMMDD)")
+    flr_nm:    str | None      = Field(None, description="제출인")
+    label:     str | None      = Field(None, description="BERT 분류 결과")
+    score:     float | None    = Field(None, description="분류 신뢰도")
+    text_preview: str | None   = Field(None, description="본문 미리보기 (200자)")
+
+
+class DisclosuresResponse(BaseModel):
+    corp_name: str
+    corp_code: str
+    stock_code: str | None
+    total:     int             = Field(..., description="조회된 공시 수")
+    items:     list[DisclosureItem]
