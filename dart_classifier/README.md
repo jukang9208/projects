@@ -1,6 +1,13 @@
-# DART 공시 분류기
+# DART 공시 분류기 v2
 
-DART(금융감독원 전자공시시스템) 공시 본문을 BERT 파인튜닝 모델로 3개 카테고리로 분류하는 FastAPI 서비스입니다.
+DART(금융감독원 전자공시시스템) 공시 본문을 BERT 파인튜닝 모델로 분류하고, DART Open API에서 재무제표와 실시간 주가 데이터를 함께 제공하는 FastAPI 서비스입니다.
+
+## 기능 개요
+
+| 버전 | 기능 |
+|---|---|
+| v1 | BERT 파인튜닝 기반 공시 3분류 (`/classify`) |
+| v2 | 공시 분류 + DART 재무제표 + 실시간 주가 통합 분석 (`/analyze`) |
 
 ## 분류 카테고리
 
@@ -18,18 +25,23 @@ dart_classifier/
 ├── 02_finetune.ipynb         # klue/bert-base 파인튜닝
 ├── main.py                   # FastAPI 앱 엔트리포인트
 ├── app/
-│   ├── classify.py           # POST /classify 엔드포인트
-│   └── rag.py                # POST /rag/* 엔드포인트
+│   ├── classify.py           # POST /classify
+│   ├── rag.py                # POST /rag/*
+│   └── analyze.py            # POST /analyze (v2)
 ├── core/
 │   └── config.py             # 환경변수 및 설정
 ├── schemas/
-│   └── classify.py           # Pydantic 스키마 (분류 + RAG)
+│   └── classify.py           # Pydantic 스키마 전체
 ├── services/
-│   ├── classifier.py         # BERT 추론 로직
+│   ├── classifier.py         # BERT 추론
 │   ├── embedder.py           # Gemini 임베딩
-│   └── rag.py                # Supabase 벡터 검색
+│   ├── rag.py                # Supabase 벡터 검색
+│   ├── financial.py          # DART 재무제표 수집 및 캐시 (v2)
+│   └── market.py             # 실시간 주가 조회 (v2)
 ├── scripts/
-│   └── ingest_corpus.py      # 학습 데이터 Supabase 업로드
+│   └── upload_corps.py       # DART 기업코드 DB 업로드
+├── db/
+│   └── init_v2.sql           # dart_corps 테이블 생성 SQL
 ├── models/                   # ⚠️ 미포함 (아래 참고)
 ├── Dockerfile
 └── requirements.txt
@@ -66,9 +78,53 @@ models/
 
 ## API
 
+### POST /analyze (v2 핵심)
+
+공시 본문 분류와 기업 재무 데이터를 통합 분석합니다.
+
+재무제표는 Supabase에 캐시되며, 주가는 매 요청마다 실시간으로 조회합니다.
+
+**Request**
+```json
+{
+  "text": "당사는 시설투자 목적으로 보통주 500만 주를 유상증자 결정하였습니다...",
+  "corp_name": "삼성전자",
+  "year": 2023
+}
+```
+
+**Response**
+```json
+{
+  "classify": {
+    "label": "유상증자",
+    "score": 0.968
+  },
+  "financial": {
+    "corp_name": "삼성전자",
+    "stock_code": "005930",
+    "year": 2023,
+    "revenue": 258935494000000,
+    "operating_profit": 6566976000000,
+    "net_income": 15487096000000,
+    "total_assets": 455905746000000,
+    "total_liabilities": 92228696000000,
+    "total_equity": 363677050000000,
+    "debt_ratio": 25.4,
+    "close": 56000,
+    "market_cap": 334480000000000,
+    "high_52w": 88800,
+    "low_52w": 49900,
+    "listed": true,
+    "source": "dart_api"
+  },
+  "insight": "[유상증자 · 신뢰도 97%] 삼성전자 2023년\n매출액 2,589,354.9억원, 영업이익 65,669.8억원, 부채비율 25.4%\n..."
+}
+```
+
 ### POST /classify
 
-공시 본문 텍스트를 입력하면 카테고리와 신뢰도를 반환합니다.
+공시 본문 텍스트만 분류합니다.
 
 **Request**
 ```json
@@ -80,10 +136,7 @@ models/
 **Response**
 ```json
 {
-  "result": {
-    "label": "유상증자",
-    "score": 0.9542
-  },
+  "result": { "label": "유상증자", "score": 0.9542 },
   "text_length": 47
 }
 ```
@@ -91,6 +144,37 @@ models/
 ### GET /health
 
 서비스 상태 확인
+
+## v2 데이터 아키텍처
+
+```
+기업명 입력
+    │
+    ▼
+dart_corps (Supabase)
+    └─ corp_code, stock_code 조회
+         │ 상장사 우선 4단계 lookup
+    ▼
+dart_rag_documents (Supabase) — 캐시 확인
+    ├─ 히트: 저장된 재무제표 반환
+    └─ 미스: DART API (fnlttSinglAcntAll) 수집 → 저장
+         │ 사업보고서(CFS→OFS) → 반기/분기 순 fallback
+    ▼
+FinanceDataReader — 실시간 주가 조회 (KRX)
+    └─ 종가, 시가총액, 52주 고/저
+```
+
+## Supabase 테이블
+
+| 테이블 | 역할 |
+|---|---|
+| `dart_corps` | DART 전체 기업코드 (약 10만 건) |
+| `dart_rag_documents` | 재무제표 요약 캐시 + pgvector 임베딩 |
+
+기업코드 초기 업로드:
+```bash
+python scripts/upload_corps.py
+```
 
 ## 환경 변수
 
@@ -121,7 +205,7 @@ cd dart_classifier
 gcloud run deploy jukang-dartclassifier --source . --region asia-northeast1
 ```
 
-Secret Manager에 환경변수 등록 필요: `SUPABASE_URL`, `SUPABASE_KEY`, `GEMINI_API_KEY`
+Secret Manager에 환경변수 등록 필요: `SUPABASE_URL`, `SUPABASE_KEY`, `GEMINI_API_KEY`, `DART_API_KEY`
 
 ## 기술 스택
 
@@ -129,6 +213,8 @@ Secret Manager에 환경변수 등록 필요: `SUPABASE_URL`, `SUPABASE_KEY`, `G
 |---|---|
 | ML | klue/bert-base, Hugging Face Transformers 5.x |
 | Embedding | Gemini text-embedding-004 (768차원) |
+| 재무 데이터 | DART Open API (fnlttSinglAcntAll) |
+| 주가 데이터 | FinanceDataReader (KRX) |
 | Backend | FastAPI, Uvicorn |
 | Database | Supabase (PostgreSQL + pgvector) |
 | Infra | GCP Cloud Run, Docker |
