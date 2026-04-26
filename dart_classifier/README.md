@@ -1,13 +1,14 @@
-# DART 공시 분류기 v2
+# DART 공시 분류기 v2.5
 
-DART(금융감독원 전자공시시스템) 공시 본문을 BERT 파인튜닝 모델로 분류하고, DART Open API에서 재무제표와 실시간 주가 데이터를 함께 제공하는 FastAPI 서비스입니다.
+DART(금융감독원 전자공시시스템) 공시를 자동 조회·분류하고, 재무제표와 실시간 주가 데이터를 함께 제공하는 FastAPI 서비스입니다.
 
-## 기능 개요
+## 버전 히스토리
 
 | 버전 | 기능 |
 |---|---|
 | v1 | BERT 파인튜닝 기반 공시 3분류 (`/classify`) |
 | v2 | 공시 분류 + DART 재무제표 + 실시간 주가 통합 분석 (`/analyze`) |
+| v2.5 | DART 공시 자동 조회 + 보고서 유형 자동 분류 (`/disclosures`) |
 
 ## 분류 카테고리
 
@@ -27,7 +28,8 @@ dart_classifier/
 ├── app/
 │   ├── classify.py           # POST /classify
 │   ├── rag.py                # POST /rag/*
-│   └── analyze.py            # POST /analyze (v2)
+│   ├── analyze.py            # POST /analyze (v2)
+│   └── disclosures.py        # GET  /disclosures (v2.5)
 ├── core/
 │   └── config.py             # 환경변수 및 설정
 ├── schemas/
@@ -37,7 +39,8 @@ dart_classifier/
 │   ├── embedder.py           # Gemini 임베딩
 │   ├── rag.py                # Supabase 벡터 검색
 │   ├── financial.py          # DART 재무제표 수집 및 캐시 (v2)
-│   └── market.py             # 실시간 주가 조회 (v2)
+│   ├── market.py             # 실시간 주가 조회 (v2)
+│   └── disclosure.py         # 공시 자동 조회 + 분류 (v2.5)
 ├── scripts/
 │   └── upload_corps.py       # DART 기업코드 DB 업로드
 ├── db/
@@ -78,6 +81,40 @@ models/
 
 ## API
 
+### GET /disclosures (v2.5 핵심)
+
+기업명만 입력하면 최근 1년간 공시 목록을 자동 조회하고 유형을 분류합니다.
+
+정기공시(A) · 주요사항보고서(B) · 외부감사(F) 유형을 대상으로 조회하며, 보고서명 키워드 기반으로 3개 카테고리에 자동 매핑합니다.
+
+**Request**
+```
+GET /disclosures?corp_name=삼성전자&count=5
+```
+
+**Response**
+```json
+{
+  "corp_name": "삼성전자",
+  "corp_code": "00126380",
+  "stock_code": "005930",
+  "total": 5,
+  "items": [
+    {
+      "rcept_no": "20260310002820",
+      "rept_nm": "사업보고서 (2025.12)",
+      "rcept_dt": "20260310",
+      "flr_nm": "삼성전자",
+      "label": "사업보고서",
+      "score": null,
+      "text_preview": null
+    }
+  ]
+}
+```
+
+> `score`는 BERT 직접 분류 시에만 반환됩니다. 보고서명 키워드 매핑의 경우 `null`입니다.
+
 ### POST /analyze (v2 핵심)
 
 공시 본문 분류와 기업 재무 데이터를 통합 분석합니다.
@@ -96,10 +133,7 @@ models/
 **Response**
 ```json
 {
-  "classify": {
-    "label": "유상증자",
-    "score": 0.968
-  },
+  "classify": { "label": "유상증자", "score": 0.968 },
   "financial": {
     "corp_name": "삼성전자",
     "stock_code": "005930",
@@ -118,7 +152,7 @@ models/
     "listed": true,
     "source": "dart_api"
   },
-  "insight": "[유상증자 · 신뢰도 97%] 삼성전자 2023년\n매출액 2,589,354.9억원, 영업이익 65,669.8억원, 부채비율 25.4%\n..."
+  "insight": "[유상증자 · 신뢰도 97%] 삼성전자 2023년\n..."
 }
 ```
 
@@ -128,9 +162,7 @@ models/
 
 **Request**
 ```json
-{
-  "text": "당사는 시설투자 목적으로 보통주 500만 주를 유상증자 결정하였습니다..."
-}
+{ "text": "당사는 시설투자 목적으로 보통주 500만 주를 유상증자 결정하였습니다..." }
 ```
 
 **Response**
@@ -145,23 +177,19 @@ models/
 
 서비스 상태 확인
 
-## v2 데이터 아키텍처
+## 데이터 아키텍처
 
 ```
-기업명 입력
-    │
-    ▼
-dart_corps (Supabase)
-    └─ corp_code, stock_code 조회
-         │ 상장사 우선 4단계 lookup
-    ▼
-dart_rag_documents (Supabase) — 캐시 확인
-    ├─ 히트: 저장된 재무제표 반환
-    └─ 미스: DART API (fnlttSinglAcntAll) 수집 → 저장
-         │ 사업보고서(CFS→OFS) → 반기/분기 순 fallback
-    ▼
-FinanceDataReader — 실시간 주가 조회 (KRX)
-    └─ 종가, 시가총액, 52주 고/저
+[/disclosures] 기업명 입력
+    └─ dart_corps (Supabase) → corp_code 조회 (상장사 우선 4단계)
+        └─ DART list.json → 정기공시 / 주요사항 / 외부감사 목록
+            └─ report_nm 키워드 매핑 → label (감사보고서 / 사업보고서 / 유상증자 / 기타)
+
+[/analyze] 기업명 + 연도 + 공시 본문 입력
+    └─ BERT → 공시 분류
+    └─ dart_rag_documents (Supabase) → 재무제표 캐시
+        └─ 미스: DART fnlttSinglAcntAll → CFS/OFS fallback → 저장
+    └─ FinanceDataReader (KRX) → 실시간 주가
 ```
 
 ## Supabase 테이블
@@ -177,8 +205,6 @@ python scripts/upload_corps.py
 ```
 
 ## 환경 변수
-
-`.env.example`을 참고하여 `.env` 파일을 생성합니다.
 
 ```
 SUPABASE_URL=https://your-project.supabase.co
@@ -205,7 +231,7 @@ cd dart_classifier
 gcloud run deploy jukang-dartclassifier --source . --region asia-northeast1
 ```
 
-Secret Manager에 환경변수 등록 필요: `SUPABASE_URL`, `SUPABASE_KEY`, `GEMINI_API_KEY`, `DART_API_KEY`
+Secret Manager 등록 필요: `SUPABASE_URL`, `SUPABASE_KEY`, `GEMINI_API_KEY`, `DART_API_KEY`
 
 ## 기술 스택
 
@@ -213,7 +239,7 @@ Secret Manager에 환경변수 등록 필요: `SUPABASE_URL`, `SUPABASE_KEY`, `G
 |---|---|
 | ML | klue/bert-base, Hugging Face Transformers 5.x |
 | Embedding | Gemini text-embedding-004 (768차원) |
-| 재무 데이터 | DART Open API (fnlttSinglAcntAll) |
+| 공시 데이터 | DART Open API (list.json, fnlttSinglAcntAll) |
 | 주가 데이터 | FinanceDataReader (KRX) |
 | Backend | FastAPI, Uvicorn |
 | Database | Supabase (PostgreSQL + pgvector) |
