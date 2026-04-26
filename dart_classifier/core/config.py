@@ -21,3 +21,6 @@ GEMINI_API_KEY: str = os.environ["GEMINI_API_KEY"]
 DART_API_KEY:   str = os.environ["DART_API_KEY"]
 GEMINI_EMBEDDING_MODEL: str = "models/gemini-embedding-001"
 EMBEDDING_DIM: int = 768
+
+NAVER_CLIENT_ID:     str = os.environ.get("NAVER_CLIENT_ID", "")
+NAVER_CLIENT_SECRET: str = os.environ.get("NAVER_CLIENT_SECRET", "")

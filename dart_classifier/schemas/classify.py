@@ -111,3 +111,29 @@ class DisclosuresResponse(BaseModel):
     stock_code: str | None
     total:     int             = Field(..., description="조회된 공시 수")
     items:     list[DisclosureItem]
+
+
+# ── Company (기업 종합 조회) v3 ───────────────────────────
+class NewsArticle(BaseModel):
+    title:     str   = Field(..., description="뉴스 제목")
+    link:      str   = Field(..., description="뉴스 URL")
+    pub_date:  str   = Field(..., description="발행일")
+    sentiment: str   = Field(..., description="긍정 / 부정 / 중립")
+    score:     float = Field(..., description="KR-FinBERT 신뢰도")
+
+
+class NewsSentiment(BaseModel):
+    label:          str              = Field(..., description="전체 감성 (긍정 / 부정 / 중립)")
+    positive_ratio: float            = Field(..., description="긍정 비율 (0~1)")
+    negative_ratio: float            = Field(..., description="부정 비율 (0~1)")
+    neutral_ratio:  float            = Field(..., description="중립 비율 (0~1)")
+    articles:       list[NewsArticle]
+
+
+class CompanyResponse(BaseModel):
+    corp_name:      str
+    corp_code:      str
+    stock_code:     str | None
+    disclosures:    list[DisclosureItem]
+    news_sentiment: NewsSentiment
+    financial:      FinancialData
