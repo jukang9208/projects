@@ -7,7 +7,6 @@ _classifier = None
 def get_classifier():
     global _classifier
     if _classifier is None:
-        print(f"DEBUG: torch name in get_classifier: {'torch' in globals()}")
         _classifier = pipeline(
             "text-classification",
             model=CLASSIFIER_MODEL_DIR,

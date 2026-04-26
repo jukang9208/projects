@@ -100,8 +100,11 @@ def lookup_corp_code(corp_name: str) -> dict | None:
     return fallback.data[0] if fallback.data else None
 
 
-def fetch_financial_from_dart(corp_code: str, year: int) -> dict:
-
+def fetch_financial_from_dart(corp_code: str, year: int) -> dict | None:
+    """
+    DART fnlttSinglAcntAll 조회. 8개 COMBO fallback.
+    데이터 없으면 None 반환 (비상장사·미공시 포함).
+    """
     # fnlttSinglAcntAll 은 fs_div 필수 — CFS(연결) 우선, OFS(별도) fallback
     # reprt_code: 사업보고서(11011) 우선, 반기·분기 순으로 fallback
     COMBOS = [
@@ -130,10 +133,9 @@ def fetch_financial_from_dart(corp_code: str, year: int) -> dict:
         if data.get("status") == "000":
             break
 
+    # 8개 COMBO 전부 실패 — 비상장사 또는 미공시
     if data is None or data.get("status") != "000":
-        raise ValueError(
-            f"DART 데이터 없음 (corp_code={corp_code}, year={year}): {data.get('message') if data else 'no response'}"
-        )
+        return None
 
     # fs_div를 요청 파라미터로 이미 지정했으므로 응답 그대로 사용
     items = data.get("list", [])
@@ -237,13 +239,21 @@ def get_financial(corp_name: str, year: int) -> dict:
         .execute()
     )
     if cached.data:
-        financials = cached.data[0]["metadata"]
+        financials = dict(cached.data[0]["metadata"])
         source = "cache"
     else:
-        # DART API 수집 → 저장
-        financials = fetch_financial_from_dart(corp_code, year)
-        save_financial(corp_code, corp_name_official, stock_code, year, financials)
-        source = "dart_api"
+        # DART API 수집
+        raw = fetch_financial_from_dart(corp_code, year)
+        if raw is None:
+            # 비상장사·미공시 — 재무데이터 없이 주가만 반환
+            all_keys = {"revenue", "operating_profit", "net_income",
+                        "total_assets", "total_liabilities", "total_equity", "debt_ratio"}
+            financials = {k: None for k in all_keys}
+            source = "no_data"
+        else:
+            financials = raw
+            save_financial(corp_code, corp_name_official, stock_code, year, financials)
+            source = "dart_api"
 
     # debt_ratio 계산 (캐시에 없거나 새로 수집한 경우 모두 보정)
     tl = financials.get("total_liabilities")
