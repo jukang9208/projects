@@ -11,11 +11,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 WORKDIR /app
 
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt 
+RUN pip install --no-cache-dir -r requirements.txt
 
 # torch CPU 전용 설치 (GPU 버전 제외 → 이미지 ~1GB 절감)
 RUN pip install --no-cache-dir --force-reinstall \
-    torch==2.4.1+cpu \
+    torch==2.6.0+cpu \
     --index-url https://download.pytorch.org/whl/cpu
 
 COPY . .
