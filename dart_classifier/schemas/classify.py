@@ -1,7 +1,7 @@
 from pydantic import BaseModel, Field
 
 
-# ── Classify ──────────────────────────────────────────────
+# Classify 
 class ClassifyRequest(BaseModel):
     text: str = Field(..., min_length=10, description="분류할 공시 본문 텍스트")
 
@@ -16,7 +16,7 @@ class ClassifyResponse(BaseModel):
     text_length: int = Field(..., description="입력 텍스트 길이")
 
 
-# ── RAG Ingest ────────────────────────────────────────────
+# RAG Ingest
 class IngestRequest(BaseModel):
     chunk_id: str       = Field(..., description="청크 고유 ID")
     doc_id: str         = Field(..., description="원문 공시 문서 ID (rcept_no 등)")
@@ -35,7 +35,7 @@ class IngestResponse(BaseModel):
     message: str = "ok"
 
 
-# ── RAG Search ────────────────────────────────────────────
+# RAG Search
 class SearchRequest(BaseModel):
     query: str            = Field(..., min_length=2, description="검색 쿼리")
     match_count: int      = Field(3, ge=1, le=20, description="반환 청크 수")
@@ -59,8 +59,7 @@ class SearchResponse(BaseModel):
     results: list[SearchResult]
     count: int
 
-
-# ── Analyze (분류 + 재무) ─────────────────────────────────
+# Analyze (분류 + 재무) 
 class AnalyzeRequest(BaseModel):
     text:      str = Field(..., min_length=10, description="공시 본문 텍스트")
     corp_name: str = Field(..., min_length=1,  description="기업명")
@@ -94,7 +93,7 @@ class AnalyzeResponse(BaseModel):
     insight:   str = Field(..., description="분류 + 재무 기반 종합 인사이트")
 
 
-# ── Disclosures (공시 자동 조회) v2.5 ─────────────────────
+# Disclosures (공시 자동 조회) v2.5 
 class DisclosureItem(BaseModel):
     rcept_no:  str             = Field(..., description="접수번호")
     rept_nm:   str             = Field(..., description="보고서명")
@@ -113,7 +112,7 @@ class DisclosuresResponse(BaseModel):
     items:     list[DisclosureItem]
 
 
-# ── Company (기업 종합 조회) v3 ───────────────────────────
+# Company (기업 종합 조회) v3 
 class NewsArticle(BaseModel):
     title:     str   = Field(..., description="뉴스 제목")
     link:      str   = Field(..., description="뉴스 URL")

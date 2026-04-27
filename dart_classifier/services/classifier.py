@@ -13,12 +13,11 @@ def get_classifier():
             tokenizer=CLASSIFIER_MODEL_DIR,
             device="cpu",
             truncation=True,
-            max_length=256,
+            max_length=512,  # 수정 : 256 -> 512
         )
     return _classifier
 
 def classify_text(text: str) -> dict:
-
     classifier = get_classifier()
-    result = classifier(text[:512])[0]  
+    result = classifier(text)[0]  # text[:512] 슬라이싱 제거
     return {"label": result["label"], "score": round(result["score"], 4)}

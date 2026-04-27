@@ -8,7 +8,7 @@ from core.config import SUPABASE_URL, SUPABASE_KEY, DART_API_KEY
 FINANCIAL_URL = "https://opendart.fss.or.kr/api/fnlttSinglAcntAll.json"
 
 
-# account_nm 기반 매핑 (표기 변형 포함)
+# account_nm 기반 매핑 
 TARGET_ACCOUNTS = {
     "매출액":           "revenue",
     "수익(매출액)":     "revenue",
@@ -28,7 +28,7 @@ TARGET_ACCOUNTS = {
     "자본 합계":        "total_equity",
 }
 
-# account_id 기반 매핑 (IFRS 표준 — 계정명이 달라도 안정적)
+# account_id 기반 매핑 
 TARGET_ACCOUNT_IDS = {
     "ifrs-full_Revenue":                                "revenue",
     "ifrs_Revenue":                                     "revenue",
@@ -101,12 +101,7 @@ def lookup_corp_code(corp_name: str) -> dict | None:
 
 
 def fetch_financial_from_dart(corp_code: str, year: int) -> dict | None:
-    """
-    DART fnlttSinglAcntAll 조회. 8개 COMBO fallback.
-    데이터 없으면 None 반환 (비상장사·미공시 포함).
-    """
-    # fnlttSinglAcntAll 은 fs_div 필수 — CFS(연결) 우선, OFS(별도) fallback
-    # reprt_code: 사업보고서(11011) 우선, 반기·분기 순으로 fallback
+
     COMBOS = [
         ("11011", "CFS"),
         ("11011", "OFS"),
