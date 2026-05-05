@@ -4,4 +4,8 @@
 *.pdf
 .vscode/
 .idea/
+__pycache__/
+*.pyc
 dart_classifier/models/
+seoul_transport/key.json
+seoul_transport/data/
