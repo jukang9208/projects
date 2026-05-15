@@ -8,6 +8,7 @@ import zipfile
 import requests
 import argparse
 from pathlib import Path
+from bs4 import BeautifulSoup
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
@@ -46,44 +47,43 @@ def fetch_list(category: str, bgn_de: str, end_de: str, page_count: int) -> list
 
 
 # 공시 원문 텍스트 추출 
-def fetch_document_text(rcept_no: str) -> str:
+DOC_URL = "https://opendart.fss.or.kr/api/document.xml"
 
-    resp = requests.get(f"{BASE_URL}/document.json", params={
-        "crtfc_key": settings.DART_API_KEY,
-        "rcept_no":  rcept_no,
-    }, timeout=30)
-    resp.raise_for_status()
-    data = resp.json()
-
-    if data.get("status") != "000":
-        return ""
-
-    # base64 디코딩 → zip 해제
+def fetch_document_text(rcept_no: str, max_chars=3000) -> str:
     try:
-        zip_bytes = base64.b64decode(data["zip_file"])
+        res = requests.get(DOC_URL, params={
+            "crtfc_key": settings.DART_API_KEY,
+            "rcept_no": rcept_no
+        }, timeout=15)
+
+        if res.status_code != 200:
+            return ""
+
+        with zipfile.ZipFile(io.BytesIO(res.content)) as z:
+            candidates = [f for f in z.namelist() if f.endswith(('.htm', '.xml'))]
+            if not candidates:
+                return ""
+            main_file = max(candidates, key=lambda f: z.getinfo(f).file_size)
+            with z.open(main_file) as f:
+                content = f.read()
+                for enc in ['euc-kr', 'cp949', 'utf-8']:
+                    try:
+                        raw = content.decode(enc)
+                        break
+                    except:
+                        continue
+                else:
+                    raw = content.decode('utf-8', errors='ignore')
+
+        soup = BeautifulSoup(raw, 'lxml')
+        for tag in soup(['script', 'style', 'table']):
+            tag.decompose()
+        text = soup.get_text(separator=' ', strip=True)
+        text = re.sub(r'\s+', ' ', text).strip()
+        return text[:max_chars]
+
     except Exception:
         return ""
-
-    texts = []
-    with zipfile.ZipFile(io.BytesIO(zip_bytes)) as zf:
-        for name in zf.namelist():
-            # .xml / .html 파일만 처리
-            if not name.lower().endswith((".xml", ".html", ".htm")):
-                continue
-            try:
-                raw = zf.read(name).decode("utf-8", errors="ignore")
-            except Exception:
-                continue
-
-            # 태그 제거 → 공백 정리
-            text = re.sub(r"<[^>]+>", " ", raw)
-            text = re.sub(r"\s+", " ", text).strip()
-            if len(text) > 100:
-                texts.append(text)
-
-    # 여러 파일이 있으면 합치되 최대 6000자
-    full_text = " ".join(texts)
-    return full_text[:6000]
 
 
 # 저장

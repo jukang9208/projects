@@ -13,7 +13,7 @@ from core.config import settings
 import google.generativeai as genai
 
 genai.configure(api_key=settings.GEMINI_API_KEY)
-_model = genai.GenerativeModel("gemini-2.0-flash")
+_model = genai.GenerativeModel("gemini-2.5-flash")
 
 # 카테고리별 Q&A 유형 (다양성 확보)
 QA_TEMPLATES = {
