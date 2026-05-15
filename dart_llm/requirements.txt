@@ -1,0 +1,9 @@
+pandas
+fastapi
+uvicorn
+pydantic
+requests
+python-dotenv
+llama-cpp-python
+pydantic-settings
+google-generativeai
