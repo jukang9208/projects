@@ -9,3 +9,6 @@ __pycache__/
 dart_classifier/models/
 seoul_transport/key.json
 seoul_transport/data/
+dart_llm/data/
+dart_llm/outputs/
+dart_llm/llama.cpp/ 
