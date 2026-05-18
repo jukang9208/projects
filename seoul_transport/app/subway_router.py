@@ -88,6 +88,8 @@ def get_transfer_pattern(
 
 
 @router.get("/transfer/busiest")
-def get_busiest_transfer():
+def get_busiest_transfer(
+    month: Optional[str] = Query(None, description="월 필터 (예: 2026-05), 생략 시 전체 누적"),
+):
     _, transfer_svc = get_services()
-    return transfer_svc.get_busiest_transfer()
+    return transfer_svc.get_busiest_transfer(month)
