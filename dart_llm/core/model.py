@@ -1,21 +1,32 @@
 import os
-from llama_cpp import Llama
+import torch
+from dotenv import load_dotenv
+from transformers import AutoTokenizer, AutoModelForCausalLM
 
-_llm: Llama | None = None
+
+load_dotenv()
+_model = None
+_tokenizer = None
+
+MODEL_PATH = os.getenv("LLM_MODEL_PATH", "")
+SYSTEM = os.getenv("LLM_SYSTEM", "당신은 DART 금융 공시 문서를 분석하는 전문 AI입니다.")
 
 
-def get_llm() -> Llama:
-    global _llm
-    if _llm is None:
-        model_path = os.getenv("GGUF_MODEL_PATH", "")
-        if not model_path:
-            raise RuntimeError("GGUF_MODEL_PATH 환경변수를 설정하세요.")
-        print(f"모델 로딩: {model_path}")
-        _llm = Llama(
-            model_path=model_path,
-            n_ctx=4096,
-            n_threads=os.cpu_count() or 4,
-            verbose=False,
+def get_llm():
+    global _model, _tokenizer
+    if _model is None:
+        if not MODEL_PATH:
+            raise RuntimeError("LLM_MODEL_PATH 환경변수를 설정하세요.")
+        print(f"모델 로딩: {MODEL_PATH}")
+        _tokenizer = AutoTokenizer.from_pretrained(
+            MODEL_PATH, trust_remote_code=True
         )
+        _model = AutoModelForCausalLM.from_pretrained(
+            MODEL_PATH,
+            torch_dtype=torch.bfloat16,
+            device_map='auto',
+            trust_remote_code=True,
+        )
+        _model.eval()
         print("모델 로딩 완료")
-    return _llm
+    return _model, _tokenizer

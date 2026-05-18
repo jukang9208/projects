@@ -1,9 +1,14 @@
+peft
+torch
 pandas
 fastapi
 uvicorn
 pydantic
 requests
+accelerate
+transformers
 python-dotenv
-llama-cpp-python
+sentencepiece
 pydantic-settings
 google-generativeai
+google-cloud-storage

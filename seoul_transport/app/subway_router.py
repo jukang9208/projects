@@ -10,6 +10,7 @@ _spark = None
 _usage_svc = None
 _transfer_svc = None
 
+
 def get_services():
     global _spark, _usage_svc, _transfer_svc
     if _spark is None:
@@ -17,6 +18,14 @@ def get_services():
         _usage_svc = UsageService(_spark)
         _transfer_svc = TransferService(_spark)
     return _usage_svc, _transfer_svc
+
+
+# 데이터 메타 (수집 기간, 월 목록 등) - Delta Lake 집계
+@router.get("/usage/meta")
+def get_meta():
+    usage_svc, _ = get_services()
+    return usage_svc.get_meta()
+
 
 # 일별 승하차량
 @router.get("/usage/daily")
@@ -27,6 +36,7 @@ def get_daily_usage(
     usage_svc, _ = get_services()
     return usage_svc.get_daily_usage(station, line)
 
+
 @router.get("/usage/ranking")
 def get_top_stations(
     line:  Optional[str] = Query(None, description="호선 필터 (예: 2호선), 생략 시 전체"),
@@ -35,6 +45,7 @@ def get_top_stations(
     usage_svc, _ = get_services()
     return usage_svc.get_top_stations(line, limit)
 
+
 @router.get("/usage/weekly")
 def get_weekly_pattern(
     station: str = Query(..., description="역명 (예: 강남)"),
@@ -42,12 +53,14 @@ def get_weekly_pattern(
     usage_svc, _ = get_services()
     return usage_svc.get_weekly_pattern(station)
 
+
 @router.get("/usage/monthly")
 def get_monthly_trend(
     station: str = Query(..., description="역명 (예: 강남)"),
 ):
     usage_svc, _ = get_services()
     return usage_svc.get_monthly_trend(station)
+
 
 @router.get("/usage/trend")
 def get_daily_trend(
@@ -57,6 +70,7 @@ def get_daily_trend(
 ):
     usage_svc, _ = get_services()
     return usage_svc.get_daily_trend(station, start_date, end_date)
+
 
 # 환승역
 @router.get("/transfer/stations")

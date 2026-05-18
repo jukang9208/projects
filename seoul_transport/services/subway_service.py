@@ -16,8 +16,7 @@ class UsageService:
             df = df.filter(F.col("subway_sta_nm") == station)
         if line:
             df = df.filter(F.col("line_num") == line)
-        return df.orderBy("line_num", "subway_sta_nm") \
-                 .toPandas().to_dict(orient="records")
+        return df.orderBy("line_num", "subway_sta_nm").toPandas().to_dict(orient="records")
 
     def get_top_stations(self, line: str = None, limit: int = 10):
        
@@ -41,6 +40,30 @@ class UsageService:
         return df.filter(F.col("subway_sta_nm") == station) \
                  .orderBy("year_month") \
                  .toPandas().to_dict(orient="records")
+
+    def get_meta(self):
+        
+        df = self.spark.read.format("delta").load(f"{settings.effective_silver_path}/subway")
+        row = df.agg(
+            F.date_format(F.min("use_ymd"), "yyyy-MM-dd").alias("min_date"),
+            F.date_format(F.max("use_ymd"), "yyyy-MM-dd").alias("max_date"),
+            F.countDistinct("use_ymd").alias("total_days"),
+            F.countDistinct("subway_sta_nm").alias("total_stations"),
+        ).collect()[0]
+
+        # 수집된 월 목록 생성 
+        months_df = df.select(
+            F.date_format("use_ymd", "yyyy-MM").alias("month")
+        ).distinct().orderBy("month")
+        months = [r["month"] for r in months_df.collect()]
+
+        return {
+            "min_date": row["min_date"],
+            "max_date": row["max_date"],
+            "total_days": int(row["total_days"]),
+            "total_stations": int(row["total_stations"]),
+            "available_months": months,
+        }
 
     def get_daily_trend(self, station: str, start_date: str = None, end_date: str = None):
         
