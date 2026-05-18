@@ -16,7 +16,8 @@ class UsageService:
             df = df.filter(F.col("subway_sta_nm") == station)
         if line:
             df = df.filter(F.col("line_num") == line)
-        return df.orderBy("line_num", "subway_sta_nm").toPandas().to_dict(orient="records")
+        return df.orderBy("line_num", "subway_sta_nm") \
+                 .toPandas().to_dict(orient="records")
 
     def get_top_stations(self, line: str = None, limit: int = 10):
        
@@ -42,7 +43,7 @@ class UsageService:
                  .toPandas().to_dict(orient="records")
 
     def get_meta(self):
-        
+        """Silver Delta Lake에서 실제 수집 기간과 통계 반환 (Spark 집계)"""
         df = self.spark.read.format("delta").load(f"{settings.effective_silver_path}/subway")
         row = df.agg(
             F.date_format(F.min("use_ymd"), "yyyy-MM-dd").alias("min_date"),
@@ -101,9 +102,13 @@ class TransferService:
                  .orderBy("line_num") \
                  .toPandas().to_dict(orient="records")
 
-    def get_busiest_transfer(self):
-       
-        df = self.spark.read.format("delta").load(f"{settings.effective_gold_path}/transfer_pattern")
+    def get_busiest_transfer(self, month: str = None):
+        
+        if month:
+            df = self.spark.read.format("delta").load(f"{settings.effective_gold_path}/transfer_monthly")
+            df = df.filter(F.col("year_month") == month)
+        else:
+            df = self.spark.read.format("delta").load(f"{settings.effective_gold_path}/transfer_pattern")
         return df.groupBy("subway_sta_nm") \
                  .agg(F.sum("total_ride").alias("total_ride")) \
                  .orderBy(F.col("total_ride").desc()) \

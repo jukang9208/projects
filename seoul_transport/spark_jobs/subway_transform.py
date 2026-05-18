@@ -4,10 +4,9 @@ from pyspark.sql import functions as F
 from pyspark.sql.types import LongType
 
 
-# Raw → Silver
+# Raw → Silver 
 def raw_to_silver(spark: SparkSession, date: str):
-    # GCS 사용 시: gs://버킷명/raw/subway/YYYYMM/subway_YYYYMMDD.csv
-    # 로컬 사용 시: data/raw/subway/YYYYMM/subway_YYYYMMDD.csv
+
     raw_path    = f"{settings.effective_raw_path}/subway/{date[:6]}/subway_{date}.csv"
     silver_path = f"{settings.effective_silver_path}/subway"
 
@@ -33,7 +32,7 @@ def raw_to_silver(spark: SparkSession, date: str):
 
 # Silver → Gold
 def silver_to_gold_congestion(spark: SparkSession):
-    """일별 이용량 기반 Gold 테이블 생성"""
+    
     df = spark.read.format("delta").load(f"{settings.effective_silver_path}/subway")
 
     # 역별 평균 일 승하차
@@ -88,7 +87,9 @@ def silver_to_gold_transfer(spark: SparkSession):
 
     # 환승역별·호선별 이용 패턴
     transfer_names = [r["subway_sta_nm"] for r in df_transfer.collect()]
-    df.filter(F.col("subway_sta_nm").isin(transfer_names)) \
+    df_filtered = df.filter(F.col("subway_sta_nm").isin(transfer_names))
+
+    df_filtered \
         .groupBy("subway_sta_nm", "line_num") \
         .agg(
             F.avg("ride_num").alias("avg_ride"),
@@ -99,3 +100,12 @@ def silver_to_gold_transfer(spark: SparkSession):
         .write.format("delta").mode("overwrite") \
         .save(f"{settings.effective_gold_path}/transfer_pattern")
     print("[silver_to_gold] transfer_pattern 완료")
+
+    # 환승역별·월별 집계 
+    df_filtered \
+        .withColumn("year_month", F.date_format("use_ymd", "yyyy-MM")) \
+        .groupBy("subway_sta_nm", "year_month") \
+        .agg(F.sum("ride_num").alias("total_ride")) \
+        .write.format("delta").mode("overwrite") \
+        .save(f"{settings.effective_gold_path}/transfer_monthly")
+    print("[silver_to_gold] transfer_monthly 완료")
