@@ -1,12 +1,13 @@
 from core.config import settings
 from pyspark.sql import SparkSession
 from pyspark.sql import functions as F
-from pyspark.sql.types import LongType
+from pyspark.sql.types import LongType, IntegerType
 
 
 # Raw → Silver 
 def raw_to_silver(spark: SparkSession, date: str):
-
+    # GCS 사용 시: gs://버킷명/raw/subway/YYYYMM/subway_YYYYMMDD.csv
+    # 로컬 사용 시: data/raw/subway/YYYYMM/subway_YYYYMMDD.csv
     raw_path    = f"{settings.effective_raw_path}/subway/{date[:6]}/subway_{date}.csv"
     silver_path = f"{settings.effective_silver_path}/subway"
 
@@ -101,7 +102,7 @@ def silver_to_gold_transfer(spark: SparkSession):
         .save(f"{settings.effective_gold_path}/transfer_pattern")
     print("[silver_to_gold] transfer_pattern 완료")
 
-    # 환승역별·월별 집계 
+    # 환승역별·월별 집계 (프론트 월별 필터용)
     df_filtered \
         .withColumn("year_month", F.date_format("use_ymd", "yyyy-MM")) \
         .groupBy("subway_sta_nm", "year_month") \
@@ -109,3 +110,209 @@ def silver_to_gold_transfer(spark: SparkSession):
         .write.format("delta").mode("overwrite") \
         .save(f"{settings.effective_gold_path}/transfer_monthly")
     print("[silver_to_gold] transfer_monthly 완료")
+
+
+#  증분 처리 (일별 MERGE) 
+def silver_to_gold_incremental(spark: SparkSession, date: str):
+
+    from delta.tables import DeltaTable
+    from datetime import datetime as _dt
+
+    use_date   = _dt.strptime(date, "%Y%m%d").date()
+    year_month = date[:4] + "-" + date[4:6]
+    gold   = settings.effective_gold_path
+    silver = f"{settings.effective_silver_path}/subway"
+
+    # 오늘 날짜 파티션만 읽기
+    df_day = spark.read.format("delta").load(silver) \
+        .filter(F.col("use_ymd") == use_date)
+
+    if df_day.rdd.isEmpty():
+        print(f"[SKIP] {date} - Silver 데이터 없음")
+        return
+
+    # congestion_daily_avg 
+    day_agg = df_day.groupBy("line_num", "subway_sta_nm").agg(
+        F.avg("ride_num").alias("day_avg_ride"),
+        F.avg("alight_num").alias("day_avg_alight"),
+        F.max("ride_num").alias("day_max_ride"),
+        F.max("alight_num").alias("day_max_alight"),
+    )
+    path_da = f"{gold}/congestion_daily_avg"
+    if DeltaTable.isDeltaTable(spark, path_da):
+        DeltaTable.forPath(spark, path_da).alias("t").merge(
+            day_agg.alias("n"),
+            "t.line_num = n.line_num AND t.subway_sta_nm = n.subway_sta_nm"
+        ).whenMatchedUpdate(set={
+            "avg_ride":   "(t.avg_ride * t.data_days + n.day_avg_ride) / (t.data_days + 1)",
+            "avg_alight": "(t.avg_alight * t.data_days + n.day_avg_alight) / (t.data_days + 1)",
+            "max_ride":   "greatest(t.max_ride, n.day_max_ride)",
+            "max_alight": "greatest(t.max_alight, n.day_max_alight)",
+            "data_days":  "t.data_days + 1",
+        }).whenNotMatchedInsert(values={
+            "line_num":      "n.line_num",
+            "subway_sta_nm": "n.subway_sta_nm",
+            "avg_ride":      "n.day_avg_ride",
+            "avg_alight":    "n.day_avg_alight",
+            "max_ride":      "n.day_max_ride",
+            "max_alight":    "n.day_max_alight",
+            "data_days":     F.lit(1).cast(LongType()),
+        }).execute()
+    else:
+        day_agg.withColumnRenamed("day_avg_ride", "avg_ride") \
+            .withColumnRenamed("day_avg_alight", "avg_alight") \
+            .withColumnRenamed("day_max_ride", "max_ride") \
+            .withColumnRenamed("day_max_alight", "max_alight") \
+            .withColumn("data_days", F.lit(1).cast(LongType())) \
+            .write.format("delta").mode("overwrite").save(path_da)
+    print("[incremental] congestion_daily_avg 완료")
+
+    # congestion_weekly 
+    # week_cnt 컬럼으로 요일별 가중 평균 추적
+    dow_agg = df_day \
+        .withColumn("day_of_week", F.dayofweek("use_ymd")) \
+        .withColumn("is_weekend", F.when(F.col("day_of_week").isin(1, 7), True).otherwise(False)) \
+        .groupBy("line_num", "subway_sta_nm", "day_of_week", "is_weekend").agg(
+            F.avg("ride_num").alias("day_avg_ride"),
+            F.avg("alight_num").alias("day_avg_alight"),
+        )
+    path_wk = f"{gold}/congestion_weekly"
+    has_week_cnt = DeltaTable.isDeltaTable(spark, path_wk) and \
+        "week_cnt" in spark.read.format("delta").load(path_wk).columns
+
+    if has_week_cnt:
+        DeltaTable.forPath(spark, path_wk).alias("t").merge(
+            dow_agg.alias("n"),
+            "t.line_num = n.line_num AND t.subway_sta_nm = n.subway_sta_nm "
+            "AND t.day_of_week = n.day_of_week"
+        ).whenMatchedUpdate(set={
+            "avg_ride":   "(t.avg_ride * t.week_cnt + n.day_avg_ride) / (t.week_cnt + 1)",
+            "avg_alight": "(t.avg_alight * t.week_cnt + n.day_avg_alight) / (t.week_cnt + 1)",
+            "week_cnt":   "t.week_cnt + 1",
+        }).whenNotMatchedInsert(values={
+            "line_num":      "n.line_num",
+            "subway_sta_nm": "n.subway_sta_nm",
+            "day_of_week":   "n.day_of_week",
+            "is_weekend":    "n.is_weekend",
+            "avg_ride":      "n.day_avg_ride",
+            "avg_alight":    "n.day_avg_alight",
+            "week_cnt":      F.lit(1).cast(LongType()),
+        }).execute()
+    else:
+        # week_cnt 없는 기존 테이블 → Silver 전체로 재계산 후 week_cnt 추가
+        df_all = spark.read.format("delta").load(silver)
+        df_all.withColumn("day_of_week", F.dayofweek("use_ymd")) \
+            .withColumn("is_weekend", F.when(F.col("day_of_week").isin(1, 7), True).otherwise(False)) \
+            .groupBy("line_num", "subway_sta_nm", "day_of_week", "is_weekend").agg(
+                F.avg("ride_num").alias("avg_ride"),
+                F.avg("alight_num").alias("avg_alight"),
+                F.count("*").alias("week_cnt"),
+            ).write.format("delta").mode("overwrite").save(path_wk)
+        print("[incremental] congestion_weekly week_cnt 마이그레이션 완료")
+    print("[incremental] congestion_weekly 완료")
+
+    # congestion_monthly 
+    month_agg = df_day.withColumn("year_month", F.lit(year_month)) \
+        .groupBy("line_num", "subway_sta_nm", "year_month").agg(
+            F.sum("ride_num").alias("total_ride"),
+            F.sum("alight_num").alias("total_alight"),
+        )
+    path_mo = f"{gold}/congestion_monthly"
+    if DeltaTable.isDeltaTable(spark, path_mo):
+        DeltaTable.forPath(spark, path_mo).alias("t").merge(
+            month_agg.alias("n"),
+            "t.line_num = n.line_num AND t.subway_sta_nm = n.subway_sta_nm "
+            "AND t.year_month = n.year_month"
+        ).whenMatchedUpdate(set={
+            "total_ride":   "t.total_ride + n.total_ride",
+            "total_alight": "t.total_alight + n.total_alight",
+        }).whenNotMatchedInsert(values={
+            "line_num":      "n.line_num",
+            "subway_sta_nm": "n.subway_sta_nm",
+            "year_month":    "n.year_month",
+            "total_ride":    "n.total_ride",
+            "total_alight":  "n.total_alight",
+        }).execute()
+    else:
+        month_agg.write.format("delta").mode("overwrite").save(path_mo)
+    print("[incremental] congestion_monthly 완료")
+
+    # transfer tables 
+    ts_path = f"{gold}/transfer_stations"
+    if not DeltaTable.isDeltaTable(spark, ts_path):
+        print("[SKIP] transfer_stations 없음 — build_lakehouse.py 먼저 실행 필요")
+        return
+
+    transfer_names = [r["subway_sta_nm"] for r in
+        spark.read.format("delta").load(ts_path).select("subway_sta_nm").collect()]
+    df_day_tr = df_day.filter(F.col("subway_sta_nm").isin(transfer_names))
+
+    if df_day_tr.rdd.isEmpty():
+        print("[incremental] 환승역 데이터 없음, skip")
+        return
+
+    # transfer_pattern MERGE 
+    tp_agg = df_day_tr.groupBy("subway_sta_nm", "line_num").agg(
+        F.avg("ride_num").alias("day_avg_ride"),
+        F.avg("alight_num").alias("day_avg_alight"),
+        F.sum("ride_num").alias("day_total_ride"),
+        F.sum("alight_num").alias("day_total_alight"),
+    )
+    path_tp = f"{gold}/transfer_pattern"
+    has_tp_cnt = DeltaTable.isDeltaTable(spark, path_tp) and \
+        "tp_cnt" in spark.read.format("delta").load(path_tp).columns
+
+    if has_tp_cnt:
+        DeltaTable.forPath(spark, path_tp).alias("t").merge(
+            tp_agg.alias("n"),
+            "t.subway_sta_nm = n.subway_sta_nm AND t.line_num = n.line_num"
+        ).whenMatchedUpdate(set={
+            "avg_ride":     "(t.avg_ride * t.tp_cnt + n.day_avg_ride) / (t.tp_cnt + 1)",
+            "avg_alight":   "(t.avg_alight * t.tp_cnt + n.day_avg_alight) / (t.tp_cnt + 1)",
+            "total_ride":   "t.total_ride + n.day_total_ride",
+            "total_alight": "t.total_alight + n.day_total_alight",
+            "tp_cnt":       "t.tp_cnt + 1",
+        }).whenNotMatchedInsert(values={
+            "subway_sta_nm": "n.subway_sta_nm",
+            "line_num":      "n.line_num",
+            "avg_ride":      "n.day_avg_ride",
+            "avg_alight":    "n.day_avg_alight",
+            "total_ride":    "n.day_total_ride",
+            "total_alight":  "n.day_total_alight",
+            "tp_cnt":        F.lit(1).cast(LongType()),
+        }).execute()
+    else:
+        # tp_cnt 없는 기존 테이블 → Silver 전체로 재계산 
+        df_all = spark.read.format("delta").load(silver)
+        df_all_tr = df_all.filter(F.col("subway_sta_nm").isin(transfer_names))
+        df_all_tr.groupBy("subway_sta_nm", "line_num").agg(
+            F.avg("ride_num").alias("avg_ride"),
+            F.avg("alight_num").alias("avg_alight"),
+            F.sum("ride_num").alias("total_ride"),
+            F.sum("alight_num").alias("total_alight"),
+            F.count("*").alias("tp_cnt"),
+        ).write.format("delta").mode("overwrite").save(path_tp)
+        print("[incremental] transfer_pattern tp_cnt 마이그레이션 완료")
+    print("[incremental] transfer_pattern 완료")
+
+    # transfer_monthly MERGE
+    tm_agg = df_day_tr.withColumn("year_month", F.lit(year_month)) \
+        .groupBy("subway_sta_nm", "year_month").agg(
+            F.sum("ride_num").alias("total_ride"),
+        )
+    path_tm = f"{gold}/transfer_monthly"
+    if DeltaTable.isDeltaTable(spark, path_tm):
+        DeltaTable.forPath(spark, path_tm).alias("t").merge(
+            tm_agg.alias("n"),
+            "t.subway_sta_nm = n.subway_sta_nm AND t.year_month = n.year_month"
+        ).whenMatchedUpdate(set={
+            "total_ride": "t.total_ride + n.total_ride",
+        }).whenNotMatchedInsert(values={
+            "subway_sta_nm": "n.subway_sta_nm",
+            "year_month":    "n.year_month",
+            "total_ride":    "n.total_ride",
+        }).execute()
+    else:
+        tm_agg.write.format("delta").mode("overwrite").save(path_tm)
+    print("[incremental] transfer_monthly 완료")
+    print(f"[incremental] {date} Gold 증분 업데이트 완료 ✓")
