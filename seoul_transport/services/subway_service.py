@@ -43,7 +43,7 @@ class UsageService:
                  .toPandas().to_dict(orient="records")
 
     def get_meta(self):
-        """Silver Delta Lake에서 실제 수집 기간과 통계 반환 (Spark 집계)"""
+        
         df = self.spark.read.format("delta").load(f"{settings.effective_silver_path}/subway")
         row = df.agg(
             F.date_format(F.min("use_ymd"), "yyyy-MM-dd").alias("min_date"),
@@ -74,9 +74,12 @@ class UsageService:
             df = df.filter(F.col("use_ymd") >= start_date)
         if end_date:
             df = df.filter(F.col("use_ymd") <= end_date)
-        return df.select(
+        # 환승역은 line_num이 여러 개로 날짜별 합산
+        return df.groupBy("use_ymd").agg(
+            F.sum("ride_num").alias("ride_num"),
+            F.sum("alight_num").alias("alight_num"),
+        ).select(
             F.date_format("use_ymd", "yyyy-MM-dd").alias("date"),
-            "line_num",
             "ride_num",
             "alight_num",
         ).orderBy("use_ymd") \
