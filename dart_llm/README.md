@@ -69,7 +69,7 @@ dart_llm/
 │   ├── build_dataset.py      # Gemini Q&A 합성
 │   └── download_model.py        # GCS에서 모델 다운로드 (Cloud Run 시작 시)
 ├── notebooks/
-│   └── 04_finetune.ipynb        # QLoRA 파인튜닝
+│   └── finetune.ipynb        # QLoRA 파인튜닝
 ├── Dockerfile
 ├── requirements.txt
 ├── data/                        # .gitignore
