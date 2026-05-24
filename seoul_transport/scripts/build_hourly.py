@@ -59,15 +59,21 @@ def _silver_to_gold_hourly_local(spark: SparkSession, silver_root: str, gold_roo
     silver_path = f"{silver_root}/subway_hourly"
     df = spark.read.format("delta").load(silver_path)
 
-    # 역·호선·시간대별 평균 (월 평균)
+    # CardSubwayTime API는 월 누계 총량 → 해당 월 일수로 나눠 일 평균으로 변환
+    df = df.withColumn(
+        "days_in_month",
+        F.dayofmonth(F.last_day(F.to_date(F.concat(F.col("use_mm"), F.lit("01")), "yyyyMMdd")))
+    )
+
+    # 역·호선·시간대별 일 평균 승하차
     df.groupBy("line_num", "subway_sta_nm", "hour") \
         .agg(
-            F.avg("ride_num").alias("avg_ride"),
-            F.avg("alight_num").alias("avg_alight"),
-            F.max("ride_num").alias("max_ride"),
+            F.avg(F.col("ride_num")   / F.col("days_in_month")).alias("avg_ride"),
+            F.avg(F.col("alight_num") / F.col("days_in_month")).alias("avg_alight"),
+            F.max(F.col("ride_num")   / F.col("days_in_month")).alias("max_ride"),
             F.count("use_mm").alias("data_months"),
         ) \
-        .write.format("delta").mode("overwrite") \
+        .write.format("delta").mode("overwrite").option("overwriteSchema", "true") \
         .save(f"{gold_root}/congestion_hourly_avg")
     print("  [Gold] congestion_hourly_avg 완료")
 
