@@ -22,11 +22,7 @@ def run():
     after = df_dedup.count()
     print(f"중복 제거 후: {after:,} rows (제거: {before - after:,})")
 
-    df_dedup.write.format("delta") \
-        .mode("overwrite") \
-        .option("overwriteSchema", "true") \
-        .partitionBy("use_ymd") \
-        .save(silver_path)
+    df_dedup.write.format("delta").mode("overwrite").option("overwriteSchema", "true").partitionBy("use_ymd").save(silver_path)
 
     print("Silver 테이블 중복 제거 완료")
     spark.stop()

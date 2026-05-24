@@ -1,0 +1,11 @@
+steps:
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - 'build'
+      - '-f'
+      - 'Dockerfile.pipeline'
+      - '-t'
+      - 'gcr.io/cloud-464212/transport-pipeline-job'
+      - '.'
+images:
+  - 'gcr.io/cloud-464212/transport-pipeline-job'

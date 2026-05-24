@@ -1,0 +1,51 @@
+version: "3.8"
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./data:/app/data
+      - ./.env:/app/.env
+
+    environment:
+      - PYTHONPATH=/app
+    command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+
+  pipeline:
+    build:
+      context: .
+      dockerfile: Dockerfile.pipeline
+    volumes:
+      - ./data:/app/data
+      - ./.env:/app/.env
+
+    environment:
+      - PYTHONPATH=/app
+      
+    profiles:
+      - pipeline  
+
+  airflow:
+    image: apache/airflow:2.9.0-python3.11
+    environment:
+      - AIRFLOW__CORE__EXECUTOR=LocalExecutor
+      - AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=sqlite:////opt/airflow/airflow.db
+      - AIRFLOW__CORE__LOAD_EXAMPLES=False
+    volumes:
+      - ./dags:/opt/airflow/dags
+      - ./ingestion:/opt/airflow/ingestion
+      - ./spark_jobs:/opt/airflow/spark_jobs
+      - ./core:/opt/airflow/core
+      - ./data:/opt/airflow/data
+      - ./.env:/opt/airflow/.env
+    ports:
+      - "8080:8080"
+    command: >
+      bash -c "airflow db init &&
+               airflow users create --username admin --password admin --firstname Admin --lastname User --role Admin --email admin@example.com &&
+               airflow webserver & airflow scheduler"
+    profiles:
+      - airflow  

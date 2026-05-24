@@ -13,20 +13,20 @@ with DAG(
     dag_id="seoul_subway_pipeline",
     default_args=default_args,
     description="서울시 지하철 일별 승하차 데이터 파이프라인",
-    schedule_interval="0 6 * * *",  # 매일 오전 6시 (전날 데이터 수집)
+    schedule_interval="0 21 * * *",  # 매일 21시 (3일전 데이터 수집)
     start_date=datetime(2026, 4, 1),
     catchup=False,
     tags=["subway", "seoul", "lakehouse"],
 ) as dag:
 
     def collect_subway(**context):
-        """서울 API → Raw CSV 저장"""
+        
         from ingestion.subway_collector import run
-        date = context["ds_nodash"]   # 실행일 기준 전날 날짜 (YYYYMMDD)
+        date = context["ds_nodash"]   # 실행일 기준 3일전 날짜 (YYYYMMDD)
         run(date=date)
 
     def transform_subway(**context):
-        """Raw CSV → Silver → Gold 변환"""
+        
         from core.spark import get_spark_api
         from spark_jobs.subway_transform import (
             raw_to_silver,

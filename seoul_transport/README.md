@@ -56,7 +56,7 @@ Seoul Open Data API
 ## 디렉토리 구조
 
 ```
-seoul_transport/
+seoul_transport_lakehouse/
 ├── core/
 │   ├── config.py          # 환경변수 설정 (GCS/로컬 경로 자동 전환)
 │   └── spark.py           # SparkSession 생성 (Windows/Linux 분기, GCS 커넥터)
