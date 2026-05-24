@@ -9,7 +9,6 @@
 - **Gold 테이블 8종** — 혼잡도·환승·시간대별 패턴 분석
 - **GCP Cloud Run** 기반 API 서버 · **Cloud Run Jobs + Cloud Scheduler** 매일 자동 파이프라인
 
-**Live API →** `https://jukang-transport-38796498369.asia-northeast1.run.app`  
 **Live Demo →** [jukang.tech](https://jukang.tech)
 
 ---
