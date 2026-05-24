@@ -17,7 +17,6 @@ from pyspark.sql import functions as F
 def _hourly_raw_to_silver_local(spark: SparkSession, month: str, raw_root: str, silver_root: str):
     from delta.tables import DeltaTable
 
-    # 슬래시 통일 (Windows os.path.join 백슬래시 방지)
     raw_path    = f"{raw_root}/subway_hourly/subway_hourly_{month}.csv"
     silver_path = f"{silver_root}/subway_hourly"
 
@@ -110,7 +109,7 @@ def get_available_months(start: str = None, end: str = None) -> list[str]:
 
 
 def get_collected_months() -> set:
-    # 항상 로컬 파일 기준으로 수집 여부 확인 (GCS 여부 무관)
+    # 로컬 파일 기준 수집 여부 확인
     collected = set()
     pattern = f"{settings.RAW_PATH}/subway_hourly/subway_hourly_*.csv"
     for f in glob.glob(pattern):
@@ -120,24 +119,45 @@ def get_collected_months() -> set:
     return collected
 
 
+def _get_collected_months_gcs() -> set:
+    # GCS 버킷에서 이미 수집된 월 확인
+    from google.cloud import storage
+    client = storage.Client(project=settings.GCS_PROJECT_ID)
+    bucket = client.bucket(settings.GCS_BUCKET_NAME)
+    blobs  = bucket.list_blobs(prefix="raw/subway_hourly/subway_hourly_")
+    collected = set()
+    for blob in blobs:
+        m = os.path.basename(blob.name).replace("subway_hourly_", "").replace(".csv", "")
+        if len(m) == 6 and m.isdigit():
+            collected.add(m)
+    return collected
+
+
 def get_missing_months(start: str = None, end: str = None) -> list[str]:
     all_months = get_available_months(start, end)
-    collected = get_collected_months()
+    collected  = get_collected_months()
     return [m for m in all_months if m not in collected]
 
 
 def run(start: str = None, end: str = None):
-    spark = get_spark_local()
-    spark.sparkContext.setLogLevel("ERROR")
+    use_gcs = settings.use_gcs
 
-    local_raw    = settings.RAW_PATH
-    local_silver = settings.SILVER_PATH
-    local_gold   = settings.GOLD_PATH
+    if use_gcs:
+        from core.spark import get_spark_api
+        from ingestion.subway_collector import save_hourly_gcs
+        from spark_jobs.subway_transform import hourly_raw_to_silver, silver_to_gold_hourly
+        spark = get_spark_api()
+    else:
+        spark = get_spark_local()
+
+    spark.sparkContext.setLogLevel("ERROR")
 
     all_months = get_available_months(start, end)
 
-    # 1. 미수집 월 API 수집
-    missing = get_missing_months(start, end)
+    # ── 1. 미수집 월 API 수집 ────────────────────────────────────────
+    existing = _get_collected_months_gcs() if use_gcs else get_collected_months()
+    missing  = [m for m in all_months if m not in existing]
+
     if missing:
         print(f"\n{'='*50}")
         print(f"API 수집: {missing[0]} ~ {missing[-1]} ({len(missing)}개월)")
@@ -147,25 +167,32 @@ def run(start: str = None, end: str = None):
             if df.empty:
                 print(f"  [SKIP] {month} - 데이터 없음")
                 continue
-            save_hourly_local(df, month)
+            if use_gcs:
+                save_hourly_gcs(df, month)
+            else:
+                save_hourly_local(df, month)
 
-    # 2. raw 파일이 있는 모든 월 Silver 빌드 (MERGE → 중복 방지)
-    collected = get_collected_months()
-    existing_raw = [m for m in all_months if m in collected]
+    # ── 2. Silver 빌드 ───────────────────────────────────────────────
+    # 수집 완료 후 실제 존재하는 월 재확인 (SKIP된 월 제외)
+    after_collect = _get_collected_months_gcs() if use_gcs else get_collected_months()
+    months_to_build = [m for m in all_months if m in after_collect]
 
-    if not existing_raw:
+    if not months_to_build:
         print("처리할 raw 데이터 없음")
         spark.stop()
         return
 
     print(f"\n{'='*50}")
-    print(f"Silver 빌드: {existing_raw[0]} ~ {existing_raw[-1]} ({len(existing_raw)}개월)")
+    print(f"Silver 빌드: {months_to_build[0]} ~ {months_to_build[-1]} ({len(months_to_build)}개월)")
     print(f"{'='*50}\n")
 
     built = []
-    for month in existing_raw:
+    for month in months_to_build:
         try:
-            _hourly_raw_to_silver_local(spark, month, local_raw, local_silver)
+            if use_gcs:
+                hourly_raw_to_silver(spark, month)
+            else:
+                _hourly_raw_to_silver_local(spark, month, settings.RAW_PATH, settings.SILVER_PATH)
             built.append(month)
         except Exception as e:
             print(f"  [ERROR] {month} Silver 빌드 실패: {e}")
@@ -177,13 +204,19 @@ def run(start: str = None, end: str = None):
         spark.stop()
         return
 
-    # 3. Gold 빌드
+    # ── 3. Gold 빌드 ─────────────────────────────────────────────────
     print(f"\n{'='*50}")
     print("Gold 빌드 시작")
     print(f"{'='*50}\n")
-    _silver_to_gold_hourly_local(spark, local_silver, local_gold)
 
-    df = spark.read.format("delta").load(f"{local_gold}/congestion_hourly_avg")
+    if use_gcs:
+        silver_to_gold_hourly(spark)
+        gold_path = settings.effective_gold_path
+    else:
+        _silver_to_gold_hourly_local(spark, settings.SILVER_PATH, settings.GOLD_PATH)
+        gold_path = settings.GOLD_PATH
+
+    df  = spark.read.format("delta").load(f"{gold_path}/congestion_hourly_avg")
     row = df.agg(F.min("hour"), F.max("hour"), F.countDistinct("subway_sta_nm")).collect()[0]
     print(f"\n  hourly_avg 행수    : {df.count():,}")
     print(f"  시간대 범위        : {row[0]}시 ~ {row[1]}시")
