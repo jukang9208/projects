@@ -179,10 +179,12 @@ def silver_to_gold_incremental(spark: SparkSession, date: str):
             F.avg("alight_num").alias("day_avg_alight"),
         )
     path_wk = f"{gold}/congestion_weekly"
-    has_week_cnt = DeltaTable.isDeltaTable(spark, path_wk) and \
+    table_exists  = DeltaTable.isDeltaTable(spark, path_wk)
+    has_week_cnt  = table_exists and \
         "week_cnt" in spark.read.format("delta").load(path_wk).columns
 
-    if has_week_cnt:
+    if table_exists and has_week_cnt:
+        # 정상 증분 MERGE
         DeltaTable.forPath(spark, path_wk).alias("t").merge(
             dow_agg.alias("n"),
             "t.line_num = n.line_num AND t.subway_sta_nm = n.subway_sta_nm "
@@ -200,8 +202,8 @@ def silver_to_gold_incremental(spark: SparkSession, date: str):
             "avg_alight":    "n.day_avg_alight",
             "week_cnt":      F.lit(1).cast(LongType()),
         }).execute()
-    else:
-        # week_cnt 없는 기존 테이블 → Silver 전체로 재계산 (최초 1회)
+    elif table_exists and not has_week_cnt:
+        # 구형 테이블(week_cnt 없음) → Silver 전체 재계산 (마이그레이션, 1회)
         df_all = spark.read.format("delta").load(silver)
         df_all.withColumn("day_of_week", F.dayofweek("use_ymd")) \
             .withColumn("is_weekend", F.when(F.col("day_of_week").isin(1, 7), True).otherwise(False)) \
@@ -212,7 +214,14 @@ def silver_to_gold_incremental(spark: SparkSession, date: str):
             ).write.format("delta").mode("overwrite") \
             .option("overwriteSchema", "true") \
             .save(path_wk)
-        print("[incremental] congestion_weekly week_cnt 마이그레이션 완료")
+        print("[incremental] congestion_weekly 마이그레이션 완료")
+    else:
+        # 테이블 없음 → 오늘 하루 데이터로 신규 생성 (daily_avg/monthly와 동일 방식)
+        dow_agg.withColumnRenamed("day_avg_ride",   "avg_ride") \
+               .withColumnRenamed("day_avg_alight", "avg_alight") \
+               .withColumn("week_cnt", F.lit(1).cast(LongType())) \
+               .write.format("delta").mode("overwrite").save(path_wk)
+        print("[incremental] congestion_weekly 신규 생성 완료")
     print("[incremental] congestion_weekly 완료")
 
     # 3. congestion_monthly (월별 합계 누적)
