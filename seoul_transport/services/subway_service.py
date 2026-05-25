@@ -26,14 +26,14 @@ class UsageService:
 
     def get_weekly_pattern(self, station: str):
         df = self.spark.read.format("delta").load(f"{settings.effective_gold_path}/congestion_weekly")
-        # day_of_week: dayofweek() → IntegerType → numpy.int32 → JSON 직렬화 불가
-        # is_weekend: BooleanType → cast("integer") → numpy.int32 → 동일 문제
-        # cast("long") → LongType → numpy.int64 (Python int 서브클래스) → JSON 직렬화 가능
+        # avg_ride/avg_alight: F.avg(null) → NaN → json.dumps ValueError 방지
+        # day_of_week/is_weekend: IntegerType/BooleanType → numpy.int32 → cast("long") 으로 JSON 직렬화
         return df.filter(F.col("subway_sta_nm") == station) \
                  .select(
                      "line_num", "subway_sta_nm",
                      F.col("day_of_week").cast("long").alias("day_of_week"),
-                     "avg_ride", "avg_alight",
+                     F.coalesce(F.col("avg_ride"),   F.lit(0.0)).alias("avg_ride"),
+                     F.coalesce(F.col("avg_alight"), F.lit(0.0)).alias("avg_alight"),
                      F.col("is_weekend").cast("long").alias("is_weekend"),
                  ) \
                  .orderBy("day_of_week") \
