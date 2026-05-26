@@ -20,7 +20,7 @@ def raw_to_silver(spark: SparkSession, date: str):
         F.col("GTON_TNOPE").cast(LongType()).alias("ride_num"),
         F.col("GTOFF_TNOPE").cast(LongType()).alias("alight_num"),
     ) \
-        .dropna(subset=["use_ymd", "line_num", "subway_sta_nm"]) \
+        .dropna(subset=["use_ymd", "line_num", "subway_sta_nm", "ride_num", "alight_num"]) \
         .dropDuplicates(["use_ymd", "line_num", "subway_sta_nm"])
 
     from delta.tables import DeltaTable
