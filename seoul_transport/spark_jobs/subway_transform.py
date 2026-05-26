@@ -147,11 +147,11 @@ def silver_to_gold_incremental(spark: SparkSession, date: str):
             day_agg.alias("n"),
             "t.line_num = n.line_num AND t.subway_sta_nm = n.subway_sta_nm"
         ).whenMatchedUpdate(set={
-            "avg_ride":   "(t.avg_ride * t.data_days + n.day_avg_ride) / (t.data_days + 1)",
-            "avg_alight": "(t.avg_alight * t.data_days + n.day_avg_alight) / (t.data_days + 1)",
-            "max_ride":   "greatest(t.max_ride, n.day_max_ride)",
-            "max_alight": "greatest(t.max_alight, n.day_max_alight)",
-            "data_days":  "t.data_days + 1",
+            "avg_ride":   "CASE WHEN n.day_avg_ride IS NOT NULL THEN (t.avg_ride * t.data_days + n.day_avg_ride) / (t.data_days + 1) ELSE t.avg_ride END",
+            "avg_alight": "CASE WHEN n.day_avg_alight IS NOT NULL THEN (t.avg_alight * t.data_days + n.day_avg_alight) / (t.data_days + 1) ELSE t.avg_alight END",
+            "max_ride":   "CASE WHEN n.day_max_ride IS NOT NULL THEN greatest(t.max_ride, n.day_max_ride) ELSE t.max_ride END",
+            "max_alight": "CASE WHEN n.day_max_alight IS NOT NULL THEN greatest(t.max_alight, n.day_max_alight) ELSE t.max_alight END",
+            "data_days":  "CASE WHEN n.day_avg_ride IS NOT NULL THEN t.data_days + 1 ELSE t.data_days END",
         }).whenNotMatchedInsert(values={
             "line_num":      "n.line_num",
             "subway_sta_nm": "n.subway_sta_nm",
@@ -185,14 +185,15 @@ def silver_to_gold_incremental(spark: SparkSession, date: str):
 
     if table_exists and has_week_cnt:
         # 정상 증분 MERGE
+        # day_avg_ride/alight 가 null(API 미반환)이면 기존 값 유지, week_cnt도 증가 안 함
         DeltaTable.forPath(spark, path_wk).alias("t").merge(
             dow_agg.alias("n"),
             "t.line_num = n.line_num AND t.subway_sta_nm = n.subway_sta_nm "
             "AND t.day_of_week = n.day_of_week"
         ).whenMatchedUpdate(set={
-            "avg_ride":   "(t.avg_ride * t.week_cnt + n.day_avg_ride) / (t.week_cnt + 1)",
-            "avg_alight": "(t.avg_alight * t.week_cnt + n.day_avg_alight) / (t.week_cnt + 1)",
-            "week_cnt":   "t.week_cnt + 1",
+            "avg_ride":   "CASE WHEN n.day_avg_ride IS NOT NULL THEN (t.avg_ride * t.week_cnt + n.day_avg_ride) / (t.week_cnt + 1) ELSE t.avg_ride END",
+            "avg_alight": "CASE WHEN n.day_avg_alight IS NOT NULL THEN (t.avg_alight * t.week_cnt + n.day_avg_alight) / (t.week_cnt + 1) ELSE t.avg_alight END",
+            "week_cnt":   "CASE WHEN n.day_avg_ride IS NOT NULL THEN t.week_cnt + 1 ELSE t.week_cnt END",
         }).whenNotMatchedInsert(values={
             "line_num":      "n.line_num",
             "subway_sta_nm": "n.subway_sta_nm",

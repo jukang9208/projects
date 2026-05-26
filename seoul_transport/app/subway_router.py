@@ -98,9 +98,10 @@ def get_busiest_transfer(
 def get_hourly_pattern(
     station: str           = Query(...,  description="역명 (예: 강남)"),
     line:    Optional[str] = Query(None, description="호선 필터 (예: 2호선)"),
+    month:   Optional[str] = Query(None, description="월 필터 (예: 2026-05), 생략 시 전체 평균"),
 ):
     _, _t, hourly_svc = get_services()
-    return hourly_svc.get_hourly_pattern(station, line)
+    return hourly_svc.get_hourly_pattern(station, line, month)
 
 
 @router.get("/usage/hourly/peak", summary="역별 피크타임 상위 3시간대")

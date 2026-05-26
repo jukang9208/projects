@@ -129,23 +129,48 @@ class HourlyService:
     def __init__(self, spark: SparkSession):
         self.spark = spark
 
-    def get_hourly_pattern(self, station: str, line: str = None) -> list[dict]:
-        
-        df = self.spark.read.format("delta").load(
-            f"{settings.effective_gold_path}/congestion_hourly_avg"
-        )
-        df = df.filter(F.col("subway_sta_nm") == station)
-        if line:
-            df = df.filter(F.col("line_num") == line)
-        # 환승역은 호선별 합산
-        return df.groupBy("hour") \
-            .agg(
-                F.sum("avg_ride").alias("avg_ride"),
-                F.sum("avg_alight").alias("avg_alight"),
-                F.sum("max_ride").alias("max_ride"),
-            ) \
-            .orderBy("hour") \
-            .toPandas().to_dict(orient="records")
+    def get_hourly_pattern(self, station: str, line: str = None, month: str = None) -> list[dict]:
+        if month:
+            # Silver 시간대 테이블에서 해당 월만 조회 (월 누계 → 일 평균 변환)
+            use_mm = month.replace("-", "")   # "2026-05" → "202605"
+            df = self.spark.read.format("delta").load(
+                f"{settings.effective_silver_path}/subway_hourly"
+            )
+            df = df.filter(F.col("subway_sta_nm") == station) \
+                   .filter(F.col("use_mm") == use_mm)
+            if line:
+                df = df.filter(F.col("line_num") == line)
+            df = df.withColumn(
+                "days_in_month",
+                F.dayofmonth(F.last_day(
+                    F.to_date(F.concat(F.col("use_mm"), F.lit("01")), "yyyyMMdd")
+                ))
+            )
+            return df.groupBy("hour") \
+                .agg(
+                    F.sum(F.col("ride_num")   / F.col("days_in_month")).alias("avg_ride"),
+                    F.sum(F.col("alight_num") / F.col("days_in_month")).alias("avg_alight"),
+                    F.max(F.col("ride_num")   / F.col("days_in_month")).alias("max_ride"),
+                ) \
+                .orderBy("hour") \
+                .toPandas().to_dict(orient="records")
+        else:
+            # Gold 전체 기간 평균 (기본)
+            df = self.spark.read.format("delta").load(
+                f"{settings.effective_gold_path}/congestion_hourly_avg"
+            )
+            df = df.filter(F.col("subway_sta_nm") == station)
+            if line:
+                df = df.filter(F.col("line_num") == line)
+            # 환승역은 호선별 합산
+            return df.groupBy("hour") \
+                .agg(
+                    F.sum("avg_ride").alias("avg_ride"),
+                    F.sum("avg_alight").alias("avg_alight"),
+                    F.sum("max_ride").alias("max_ride"),
+                ) \
+                .orderBy("hour") \
+                .toPandas().to_dict(orient="records")
 
     def get_peak_hours(self, station: str) -> list[dict]:
         # 역별 피크타임 TOP3 시간대
