@@ -124,11 +124,8 @@ def search_rag_documents(
             "filter_cluster_id": None,
             "match_threshold"  : match_threshold,
         }
-        print(f"[DEBUG] RAG Query: {nomalized_query}")
-
         response = supabase.rpc("match_energy_documents", rpc_params).execute()
         raw_data = response.data or []
-        print(f"[DEBUG] RPC Returned Row Count : {len(raw_data)} (threshold={match_threshold})")
 
         cleaned_results = []
         for row in raw_data:

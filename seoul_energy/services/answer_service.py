@@ -6,7 +6,7 @@ from services.answer_handlers.trend_handler import answer_trend
 from services.answer_handlers.seoul_handler import answer_seoul_summary
 from services.answer_handlers.comparison_handler import answer_comparison
 from services.answer_handlers.cluster_handler import (
-    answer_cluster, answwer_general_cluster_question) 
+    answer_cluster, answer_general_cluster_question)
 from services.answer_handlers.general_handler import answer_general
 from services.answer_handlers.normalizers import (
     extract_summary,
@@ -118,7 +118,7 @@ def answer_question(question: str) -> dict[str, Any]:
             )
 
         if query_type == "cluster_list":
-            raw = to_python_type(answwer_general_cluster_question(parsed, target_cid))
+            raw = to_python_type(answer_general_cluster_question(parsed, target_cid))
             cluster_summary = raw.get("cluster_summary")
             year = parsed.get("year")
             title = f"{year}, Cluster {target_cid} 지도" if year else f"Cluster {target_cid} 지도"

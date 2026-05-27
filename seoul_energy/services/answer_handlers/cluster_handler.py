@@ -96,7 +96,7 @@ def answer_cluster(parsed: dict) -> dict[str, Any]:
     }
 
 
-def answwer_general_cluster_question(parsed: dict, target_cid: int) -> dict[str, Any]:
+def answer_general_cluster_question(parsed: dict, target_cid: int) -> dict[str, Any]:
     year = parsed.get("year") or 2024
 
     all_data = get_all_cluster_data(k=K)

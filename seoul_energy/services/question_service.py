@@ -24,10 +24,6 @@ def detect_metric_from_question(question: str) -> str:
         return "industry_usage"
     if any(k in question for k in ["공공", "관공서"]):
         return "public_usage"
-    if any(k in question for k in ["보급률", "가스 보급", "수급 비율"]):
-        return "gas_supply_ratio"
-    if any(k in question for k in ["가스", "수급"]):
-        return "gas_supply"
     if any(k in question for k in ["인구", "주민", "상주"]):
         return "total_resident_population"
     if any(k in question for k in ["가구수", "세대수"]):
