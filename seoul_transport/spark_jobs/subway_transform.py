@@ -147,10 +147,20 @@ def silver_to_gold_incremental(spark: SparkSession, date: str):
             day_agg.alias("n"),
             "t.line_num = n.line_num AND t.subway_sta_nm = n.subway_sta_nm"
         ).whenMatchedUpdate(set={
-            "avg_ride":   "CASE WHEN n.day_avg_ride IS NOT NULL THEN (t.avg_ride * t.data_days + n.day_avg_ride) / (t.data_days + 1) ELSE t.avg_ride END",
-            "avg_alight": "CASE WHEN n.day_avg_alight IS NOT NULL THEN (t.avg_alight * t.data_days + n.day_avg_alight) / (t.data_days + 1) ELSE t.avg_alight END",
-            "max_ride":   "CASE WHEN n.day_max_ride IS NOT NULL THEN greatest(t.max_ride, n.day_max_ride) ELSE t.max_ride END",
-            "max_alight": "CASE WHEN n.day_max_alight IS NOT NULL THEN greatest(t.max_alight, n.day_max_alight) ELSE t.max_alight END",
+            "avg_ride": (
+                "CASE WHEN n.day_avg_ride IS NOT NULL THEN "
+                "  CASE WHEN t.avg_ride IS NULL THEN n.day_avg_ride "
+                "  ELSE (t.avg_ride * t.data_days + n.day_avg_ride) / (t.data_days + 1) END "
+                "ELSE t.avg_ride END"
+            ),
+            "avg_alight": (
+                "CASE WHEN n.day_avg_alight IS NOT NULL THEN "
+                "  CASE WHEN t.avg_alight IS NULL THEN n.day_avg_alight "
+                "  ELSE (t.avg_alight * t.data_days + n.day_avg_alight) / (t.data_days + 1) END "
+                "ELSE t.avg_alight END"
+            ),
+            "max_ride":   "CASE WHEN n.day_max_ride IS NOT NULL THEN greatest(COALESCE(t.max_ride, 0), n.day_max_ride) ELSE t.max_ride END",
+            "max_alight": "CASE WHEN n.day_max_alight IS NOT NULL THEN greatest(COALESCE(t.max_alight, 0), n.day_max_alight) ELSE t.max_alight END",
             "data_days":  "CASE WHEN n.day_avg_ride IS NOT NULL THEN t.data_days + 1 ELSE t.data_days END",
         }).whenNotMatchedInsert(values={
             "line_num":      "n.line_num",
@@ -191,9 +201,21 @@ def silver_to_gold_incremental(spark: SparkSession, date: str):
             "t.line_num = n.line_num AND t.subway_sta_nm = n.subway_sta_nm "
             "AND t.day_of_week = n.day_of_week"
         ).whenMatchedUpdate(set={
-            "avg_ride":   "CASE WHEN n.day_avg_ride IS NOT NULL THEN (t.avg_ride * t.week_cnt + n.day_avg_ride) / (t.week_cnt + 1) ELSE t.avg_ride END",
-            "avg_alight": "CASE WHEN n.day_avg_alight IS NOT NULL THEN (t.avg_alight * t.week_cnt + n.day_avg_alight) / (t.week_cnt + 1) ELSE t.avg_alight END",
-            "week_cnt":   "CASE WHEN n.day_avg_ride IS NOT NULL THEN t.week_cnt + 1 ELSE t.week_cnt END",
+            # t.avg_ride/alight 가 null(과거 불량 데이터로 초기화)이면 새 값으로 교체(자가치유)
+            # 정상이면 가중 평균으로 누적
+            "avg_ride": (
+                "CASE WHEN n.day_avg_ride IS NOT NULL THEN "
+                "  CASE WHEN t.avg_ride IS NULL THEN n.day_avg_ride "
+                "  ELSE (t.avg_ride * t.week_cnt + n.day_avg_ride) / (t.week_cnt + 1) END "
+                "ELSE t.avg_ride END"
+            ),
+            "avg_alight": (
+                "CASE WHEN n.day_avg_alight IS NOT NULL THEN "
+                "  CASE WHEN t.avg_alight IS NULL THEN n.day_avg_alight "
+                "  ELSE (t.avg_alight * t.week_cnt + n.day_avg_alight) / (t.week_cnt + 1) END "
+                "ELSE t.avg_alight END"
+            ),
+            "week_cnt": "CASE WHEN n.day_avg_ride IS NOT NULL THEN t.week_cnt + 1 ELSE t.week_cnt END",
         }).whenNotMatchedInsert(values={
             "line_num":      "n.line_num",
             "subway_sta_nm": "n.subway_sta_nm",
