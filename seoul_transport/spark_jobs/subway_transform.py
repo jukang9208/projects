@@ -40,6 +40,28 @@ def raw_to_silver(spark: SparkSession, date: str):
     print(f"[raw_to_silver] 완료 → {silver_path} ({df_clean.count()} rows)")
 
 
+def _rebuild_weekly(spark: SparkSession, silver: str, gold: str):
+    """
+    Silver 전체에서 요일별 평균을 재집계해 congestion_weekly를 overwrite.
+    F.avg는 null을 무시하므로 API 오염값에 무관하게 항상 정확한 결과 보장.
+    증분 MERGE 대신 이 방식을 사용하면 오염값 누적 문제가 구조적으로 해결됨.
+    """
+    path_wk = f"{gold}/congestion_weekly"
+    df_all = spark.read.format("delta").load(silver)
+    df_all.withColumn("day_of_week", F.dayofweek("use_ymd")) \
+          .withColumn("is_weekend", F.when(F.col("day_of_week").isin(1, 7), True).otherwise(False)) \
+          .groupBy("line_num", "subway_sta_nm", "day_of_week", "is_weekend") \
+          .agg(
+              F.avg("ride_num").alias("avg_ride"),
+              F.avg("alight_num").alias("avg_alight"),
+              F.count("*").alias("week_cnt"),
+          ) \
+          .write.format("delta").mode("overwrite") \
+          .option("overwriteSchema", "true") \
+          .save(path_wk)
+    print("[weekly] congestion_weekly Silver 전체 재집계 완료")
+
+
 def silver_to_gold_congestion(spark: SparkSession):
     df = spark.read.format("delta").load(f"{settings.effective_silver_path}/subway")
 
@@ -134,6 +156,11 @@ def silver_to_gold_incremental(spark: SparkSession, date: str):
         print(f"[SKIP] {date} - Silver 데이터 없음")
         return
 
+    # congestion_weekly: 증분 MERGE 대신 Silver 전체 재집계 (overwrite)
+    # 이유: 가중평균 누적 방식은 초기 오염값이 들어가면 영구 오류 발생
+    #       Silver 전체 집계는 F.avg가 null을 무시하므로 항상 정확한 값 보장
+    _rebuild_weekly(spark, silver, gold)
+
     # 1. congestion_daily_avg (가중 평균)
     day_agg = df_day.groupBy("line_num", "subway_sta_nm").agg(
         F.avg("ride_num").alias("day_avg_ride"),
@@ -180,72 +207,10 @@ def silver_to_gold_incremental(spark: SparkSession, date: str):
             .write.format("delta").mode("overwrite").save(path_da)
     print("[incremental] congestion_daily_avg 완료")
 
-    # 2. congestion_weekly (요일별 가중 평균, week_cnt 추적)
-    dow_agg = df_day \
-        .withColumn("day_of_week", F.dayofweek("use_ymd")) \
-        .withColumn("is_weekend", F.when(F.col("day_of_week").isin(1, 7), True).otherwise(False)) \
-        .groupBy("line_num", "subway_sta_nm", "day_of_week", "is_weekend").agg(
-            F.avg("ride_num").alias("day_avg_ride"),
-            F.avg("alight_num").alias("day_avg_alight"),
-        )
-    path_wk = f"{gold}/congestion_weekly"
-    table_exists  = DeltaTable.isDeltaTable(spark, path_wk)
-    has_week_cnt  = table_exists and \
-        "week_cnt" in spark.read.format("delta").load(path_wk).columns
-
-    if table_exists and has_week_cnt:
-        # 정상 증분 MERGE
-        # day_avg_ride/alight 가 null(API 미반환)이면 기존 값 유지, week_cnt도 증가 안 함
-        DeltaTable.forPath(spark, path_wk).alias("t").merge(
-            dow_agg.alias("n"),
-            "t.line_num = n.line_num AND t.subway_sta_nm = n.subway_sta_nm "
-            "AND t.day_of_week = n.day_of_week"
-        ).whenMatchedUpdate(set={
-            # t.avg_ride/alight 가 null(과거 불량 데이터로 초기화)이면 새 값으로 교체(자가치유)
-            # 정상이면 가중 평균으로 누적
-            "avg_ride": (
-                "CASE WHEN n.day_avg_ride IS NOT NULL THEN "
-                "  CASE WHEN t.avg_ride IS NULL THEN n.day_avg_ride "
-                "  ELSE (t.avg_ride * t.week_cnt + n.day_avg_ride) / (t.week_cnt + 1) END "
-                "ELSE t.avg_ride END"
-            ),
-            "avg_alight": (
-                "CASE WHEN n.day_avg_alight IS NOT NULL THEN "
-                "  CASE WHEN t.avg_alight IS NULL THEN n.day_avg_alight "
-                "  ELSE (t.avg_alight * t.week_cnt + n.day_avg_alight) / (t.week_cnt + 1) END "
-                "ELSE t.avg_alight END"
-            ),
-            "week_cnt": "CASE WHEN n.day_avg_ride IS NOT NULL THEN t.week_cnt + 1 ELSE t.week_cnt END",
-        }).whenNotMatchedInsert(values={
-            "line_num":      "n.line_num",
-            "subway_sta_nm": "n.subway_sta_nm",
-            "day_of_week":   "n.day_of_week",
-            "is_weekend":    "n.is_weekend",
-            "avg_ride":      "n.day_avg_ride",
-            "avg_alight":    "n.day_avg_alight",
-            "week_cnt":      F.lit(1).cast(LongType()),
-        }).execute()
-    elif table_exists and not has_week_cnt:
-        # 구형 테이블(week_cnt 없음) → Silver 전체 재계산 (마이그레이션, 1회)
-        df_all = spark.read.format("delta").load(silver)
-        df_all.withColumn("day_of_week", F.dayofweek("use_ymd")) \
-            .withColumn("is_weekend", F.when(F.col("day_of_week").isin(1, 7), True).otherwise(False)) \
-            .groupBy("line_num", "subway_sta_nm", "day_of_week", "is_weekend").agg(
-                F.avg("ride_num").alias("avg_ride"),
-                F.avg("alight_num").alias("avg_alight"),
-                F.count("*").alias("week_cnt"),
-            ).write.format("delta").mode("overwrite") \
-            .option("overwriteSchema", "true") \
-            .save(path_wk)
-        print("[incremental] congestion_weekly 마이그레이션 완료")
-    else:
-        # 테이블 없음 → 오늘 하루 데이터로 신규 생성 (daily_avg/monthly와 동일 방식)
-        dow_agg.withColumnRenamed("day_avg_ride",   "avg_ride") \
-               .withColumnRenamed("day_avg_alight", "avg_alight") \
-               .withColumn("week_cnt", F.lit(1).cast(LongType())) \
-               .write.format("delta").mode("overwrite").save(path_wk)
-        print("[incremental] congestion_weekly 신규 생성 완료")
-    print("[incremental] congestion_weekly 완료")
+    # 2. congestion_weekly → Silver 전체 재집계 (overwrite)
+    # 증분 MERGE 방식은 초기 오염값(null)이 들어가면 이후 정상값이 들어와도 복구 불가
+    # Silver 전체 F.avg 재집계는 null을 자동으로 무시하므로 항상 정확한 값 보장
+    # 성능: Silver는 파티션(use_ymd)별로 읽으므로 전체 스캔이어도 충분히 빠름
 
     # 3. congestion_monthly (월별 합계 누적)
     month_agg = df_day.withColumn("year_month", F.lit(year_month)) \
