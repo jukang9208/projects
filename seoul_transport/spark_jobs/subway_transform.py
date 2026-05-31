@@ -133,7 +133,10 @@ def silver_to_gold_transfer(spark: SparkSession):
     df_filtered \
         .withColumn("year_month", F.date_format("use_ymd", "yyyy-MM")) \
         .groupBy("subway_sta_nm", "year_month") \
-        .agg(F.sum("ride_num").alias("total_ride")) \
+        .agg(
+            F.sum("ride_num").alias("total_ride"),
+            F.sum("alight_num").alias("total_alight"),
+        ) \
         .write.format("delta").mode("overwrite") \
         .save(f"{settings.effective_gold_path}/transfer_monthly")
     print("[silver_to_gold] transfer_monthly 완료")
@@ -302,19 +305,39 @@ def silver_to_gold_incremental(spark: SparkSession, date: str):
     tm_agg = df_day_tr.withColumn("year_month", F.lit(year_month)) \
         .groupBy("subway_sta_nm", "year_month").agg(
             F.sum("ride_num").alias("total_ride"),
+            F.sum("alight_num").alias("total_alight"),
         )
     path_tm = f"{gold}/transfer_monthly"
-    if DeltaTable.isDeltaTable(spark, path_tm):
+    has_alight_tm = DeltaTable.isDeltaTable(spark, path_tm) and \
+        "total_alight" in spark.read.format("delta").load(path_tm).columns
+
+    if has_alight_tm:
         DeltaTable.forPath(spark, path_tm).alias("t").merge(
             tm_agg.alias("n"),
             "t.subway_sta_nm = n.subway_sta_nm AND t.year_month = n.year_month"
         ).whenMatchedUpdate(set={
-            "total_ride": "t.total_ride + n.total_ride",
+            "total_ride":   "t.total_ride + n.total_ride",
+            "total_alight": "t.total_alight + n.total_alight",
         }).whenNotMatchedInsert(values={
-            "subway_sta_nm": "n.subway_sta_nm",
-            "year_month":    "n.year_month",
-            "total_ride":    "n.total_ride",
+            "subway_sta_nm":  "n.subway_sta_nm",
+            "year_month":     "n.year_month",
+            "total_ride":     "n.total_ride",
+            "total_alight":   "n.total_alight",
         }).execute()
+    elif DeltaTable.isDeltaTable(spark, path_tm):
+        # total_alight 컬럼 없음 → Silver 전체로 스키마 마이그레이션 (최초 1회)
+        spark.read.format("delta").load(silver) \
+            .filter(F.col("subway_sta_nm").isin(transfer_names)) \
+            .withColumn("year_month", F.date_format("use_ymd", "yyyy-MM")) \
+            .groupBy("subway_sta_nm", "year_month") \
+            .agg(
+                F.sum("ride_num").alias("total_ride"),
+                F.sum("alight_num").alias("total_alight"),
+            ) \
+            .write.format("delta").mode("overwrite") \
+            .option("overwriteSchema", "true") \
+            .save(path_tm)
+        print("[incremental] transfer_monthly total_alight 스키마 마이그레이션 완료")
     else:
         tm_agg.write.format("delta").mode("overwrite").save(path_tm)
     print("[incremental] transfer_monthly 완료")

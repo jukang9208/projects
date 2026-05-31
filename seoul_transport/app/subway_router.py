@@ -112,13 +112,22 @@ def get_peak_hours(
     return hourly_svc.get_peak_hours(station)
 
 
-@router.get("/usage/hourly/ranking", summary="특정 시간대 혼잡 역 TOP N")
+@router.get("/usage/hourly/ranking", summary="특정 시간대 혼잡 역 TOP N (승차 기준)")
 def get_rush_hour_ranking(
     hour:  int = Query(8,  description="조회 시각 (0~23). 기본: 오전 8시"),
     limit: int = Query(10, description="상위 N개 역"),
 ):
     _, _t, hourly_svc = get_services()
     return hourly_svc.get_rush_hour_ranking(hour, limit)
+
+
+@router.get("/usage/hourly/alight-ranking", summary="특정 시간대 하차 혼잡 역 TOP N (하차 기준)")
+def get_rush_hour_alight_ranking(
+    hour:  int = Query(8,  description="조회 시각 (0~23). 기본: 오전 8시"),
+    limit: int = Query(10, description="상위 N개 역"),
+):
+    _, _t, hourly_svc = get_services()
+    return hourly_svc.get_rush_hour_alight_ranking(hour, limit)
 
 
 @router.get("/usage/hourly/heatmap", summary="시간대 × 역 히트맵 데이터")

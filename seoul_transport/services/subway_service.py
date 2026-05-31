@@ -110,14 +110,17 @@ class TransferService:
                  .toPandas().to_dict(orient="records")
 
     def get_busiest_transfer(self, month: str = None):
-        # 환승역 승차량 TOP 10 
+        # 환승역 승차/하차량 TOP 10
         if month:
             df = self.spark.read.format("delta").load(f"{settings.effective_gold_path}/transfer_monthly")
             df = df.filter(F.col("year_month") == month)
         else:
             df = self.spark.read.format("delta").load(f"{settings.effective_gold_path}/transfer_pattern")
         return df.groupBy("subway_sta_nm") \
-                 .agg(F.sum("total_ride").alias("total_ride")) \
+                 .agg(
+                     F.sum("total_ride").alias("total_ride"),
+                     F.sum("total_alight").alias("total_alight"),
+                 ) \
                  .orderBy(F.col("total_ride").desc()) \
                  .limit(10) \
                  .toPandas().to_dict(orient="records")
@@ -182,7 +185,7 @@ class HourlyService:
             .toPandas().to_dict(orient="records")
 
     def get_rush_hour_ranking(self, hour: int = 8, limit: int = 10) -> list[dict]:
-        # 특정 시간대 혼잡역 
+        # 특정 시간대 혼잡역 (승차 기준)
         df = self.spark.read.format("delta").load(
             f"{settings.effective_gold_path}/congestion_hourly_avg"
         )
@@ -190,6 +193,18 @@ class HourlyService:
             .groupBy("subway_sta_nm") \
             .agg(F.sum("avg_ride").alias("avg_ride")) \
             .orderBy(F.col("avg_ride").desc()) \
+            .limit(limit) \
+            .toPandas().to_dict(orient="records")
+
+    def get_rush_hour_alight_ranking(self, hour: int = 8, limit: int = 10) -> list[dict]:
+        # 특정 시간대 하차 혼잡역 (하차 기준)
+        df = self.spark.read.format("delta").load(
+            f"{settings.effective_gold_path}/congestion_hourly_avg"
+        )
+        return df.filter(F.col("hour") == hour) \
+            .groupBy("subway_sta_nm") \
+            .agg(F.sum("avg_alight").alias("avg_alight")) \
+            .orderBy(F.col("avg_alight").desc()) \
             .limit(limit) \
             .toPandas().to_dict(orient="records")
 
