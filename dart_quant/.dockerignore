@@ -1,0 +1,31 @@
+# 자체 프론트 (jukang.tech가 프론트 담당 → API만 배포)
+static/
+
+# 환경변수·시크릿
+.env
+.env.*
+serviceAccountKey.json
+key.json
+*.json.key
+
+# 캐시·빌드
+__pycache__/
+*.py[cod]
+docs_cache/
+*.pkl
+
+# 가상환경
+venv/
+.venv/
+env/
+
+# IDE·OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# git·문서
+.git/
+.gitignore
+README.md

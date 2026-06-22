@@ -11,4 +11,6 @@ seoul_transport/key.json
 seoul_transport/data/
 dart_llm/data/
 dart_llm/outputs/
-dart_llm/llama.cpp/ 
+dart_llm/llama.cpp/
+dart_quant/key.json
+dart_quant/serviceAccountKey.json
