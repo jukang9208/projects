@@ -32,6 +32,47 @@ def _empty_sentiment() -> dict:
     }
 
 
+@router.get("/debug/sentiment")
+async def debug_sentiment(corp_name: str = Query("삼성전자")):
+    """감성분석 파이프라인 전체 테스트"""
+    try:
+        articles = fetch_news(corp_name, 3)
+        result = analyze_sentiment(articles)
+        return {"ok": True, "article_count": len(articles), "result": result}
+    except Exception as e:
+        return {"ok": False, "error": str(e), "type": type(e).__name__}
+
+
+@router.get("/debug/news")
+async def debug_news(corp_name: str = Query("삼성전자")):
+    """뉴스 API 연결 상태 확인용 임시 엔드포인트"""
+    import os
+    from core.config import NAVER_CLIENT_ID, NAVER_CLIENT_SECRET
+    import requests as req
+
+    key_set = bool(NAVER_CLIENT_ID and NAVER_CLIENT_SECRET)
+    if not key_set:
+        return {"key_set": False, "error": "NAVER 환경변수 미설정"}
+
+    try:
+        res = req.get(
+            "https://openapi.naver.com/v1/search/news.json",
+            headers={
+                "X-Naver-Client-Id":     NAVER_CLIENT_ID,
+                "X-Naver-Client-Secret": NAVER_CLIENT_SECRET,
+            },
+            params={"query": corp_name, "display": 3, "sort": "date"},
+            timeout=10,
+        )
+        return {
+            "key_set":    True,
+            "status_code": res.status_code,
+            "response":   res.json(),
+        }
+    except Exception as e:
+        return {"key_set": True, "error": str(e)}
+
+
 @router.get("", response_model=CompanyResponse)
 async def get_company(
     corp_name:        str = Query(...,  description="기업명 (예: 삼성전자)"),
@@ -45,11 +86,13 @@ async def get_company(
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
 
-    # 뉴스 감성분석 
+    # 뉴스 감성분석
+    sentiment_error = None
     try:
         articles = fetch_news(corp_name, news_count)
         sentiment_raw = analyze_sentiment(articles)
-    except Exception:
+    except Exception as e:
+        sentiment_error = str(e)
         sentiment_raw = _empty_sentiment()
 
     # 재무제표 

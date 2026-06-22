@@ -1,10 +1,10 @@
 import os
 import io
 import zipfile
-import xml.etree.ElementTree as ET
 import requests
 from dotenv import load_dotenv
 from supabase import create_client
+import xml.etree.ElementTree as ET
 
 load_dotenv()
 

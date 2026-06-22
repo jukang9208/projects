@@ -1,0 +1,39 @@
+# Git
+.git
+.gitignore
+
+# 환경변수 (절대 이미지에 포함하면 안 됨)
+.env
+.env.*
+!.env.example
+
+# 학습 체크포인트 (서비스에 불필요, 용량 큼)
+models/dart_classifier_output/
+
+# 데이터 파일 (DB에 이미 업로드됨)
+data/
+
+# 스크립트 (서비스에 불필요)
+scripts/
+
+# 노트북
+*.ipynb
+
+# Python 캐시
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# 가상환경
+venv/
+.venv/
+env/
+
+# IDE
+.vscode/
+.idea/
+
+# 로컬 DB 파일
+db/
